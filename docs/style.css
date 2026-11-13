@@ -116,3 +116,6 @@ button.primary:hover{background:#24417e;border-color:#24417e}
 
 #laser-view[aria-pressed="true"]{background:#e3ffca;color:#21430f;box-shadow:inset 0 0 0 1px #47891b}
 #viewport.laser-active{cursor:crosshair}
+
+button.danger{background:#ac2529;border-color:#ac2529;color:#fff;font-weight:600}
+button.danger:hover:not(:disabled){background:#8c1c20;border-color:#8c1c20}
