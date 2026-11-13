@@ -52,3 +52,28 @@ test('The first tap after repeated pinches still opens both overlapping notes',(
  }
  assert.deepEqual(hits,[[1,2],[1,2],[1,2],[1,2]]);
 });
+
+test('Nearby icons remain in the chooser after zooming out to a panned overview',()=>{
+ const v=Object.create(Viewer.prototype);
+ Object.assign(v,{
+  container:{clientWidth:560,clientHeight:480},
+  pdfPage:{getViewport:()=>({width:2200,height:480})},
+  zoom:4,panX:140,panY:-100,pageNumber:1,
+  marks:[12,9,8,10,17].map((number,i)=>({
+   id:number,number,page:1,kind:'note',shape:'triangle',projected:true,
+   x:.47+[0,.003,-.038,-.046,.22][i],y:.64+ [0,-.026,-.026,-.026,0][i]
+  }))
+ });
+ const tap=()=>{
+  const rect=v.rect();
+  // The lower-right edge of note 12 is farther from the neighboring icons.
+  return Array.from(v.hit(rect.x+.47*rect.w+15,rect.y+.64*rect.h-9,'mouse'),note=>note.id).sort((a,b)=>a-b);
+ };
+ assert.deepEqual(tap(),[8,9,10,12]);
+ v.zoom=12;
+ assert.deepEqual(tap(),[9,12]);
+ v.zoom=4;
+ v.panX=310;
+ v.panY=-140;
+ assert.deepEqual(tap(),[8,9,10,12]);
+});

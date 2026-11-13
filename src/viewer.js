@@ -353,10 +353,8 @@ export class Viewer{
    }
    candidates.push({annotation:a,distance,bounds});
   }
-  // Include neighbors around a directly hit mark without changing the zoom.
-  const direct=candidates.some(item=>item.distance<=touchAllowance);
-  const radius=padding+touchAllowance+(direct?Math.min(32,padding/2):0);
-  return expandOverlappingMarkers(candidates,radius)
+  const radius=padding+touchAllowance;
+  return expandOverlappingMarkers(candidates,radius,56+touchAllowance)
    .sort((a,b)=>a.distance-b.distance).map(item=>item.annotation);
  }
 }

@@ -1,9 +1,9 @@
 import * as pdfjs from './vendor/build/pdf.mjs';
-import {normalized,segmentDistance,contrast,clamp,annotationStrokes,expandOverlappingMarkers} from './model.js?v=17d96b2f795f';
+import {normalized,segmentDistance,contrast,clamp,annotationStrokes,expandOverlappingMarkers} from './model.js?v=d28c9a5bf961';
 pdfjs.GlobalWorkerOptions.workerSrc=new URL('./vendor/build/pdf.worker.mjs',import.meta.url).href;
 const vendor=new URL('./vendor/',import.meta.url).href;
 export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendor+'cmaps/',cMapPacked:true,standardFontDataUrl:vendor+'standard_fonts/',wasmUrl:vendor+'wasm/',iccUrl:vendor+'iccs/',isEvalSupported:false}).promise;}
-import {emojiSymbols} from './ship-model.js?v=17d96b2f795f';
+import {emojiSymbols} from './ship-model.js?v=d28c9a5bf961';
 const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
 // Use the part of the viewport covered by the sheet, including height-fitted overviews.
@@ -353,10 +353,8 @@ export class Viewer{
    }
    candidates.push({annotation:a,distance,bounds});
   }
-  // Include neighbors around a directly hit mark without changing the zoom.
-  const direct=candidates.some(item=>item.distance<=touchAllowance);
-  const radius=padding+touchAllowance+(direct?Math.min(32,padding/2):0);
-  return expandOverlappingMarkers(candidates,radius)
+  const radius=padding+touchAllowance;
+  return expandOverlappingMarkers(candidates,radius,56+touchAllowance)
    .sort((a,b)=>a.distance-b.distance).map(item=>item.annotation);
  }
 }
