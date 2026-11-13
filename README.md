@@ -14,7 +14,7 @@ Web app per progetti PDF condivisi, con registrazione, accesso e approvazione de
 - Annulla/Ripeti e controllo versione per rilevare modifiche concorrenti.
 - Aggiornamenti tramite Supabase Realtime di progetti, documenti, annotazioni e approvazioni. Recupero periodico ogni 10 secondi in caso di eventi persi. Durante una finestra di modifica gli aggiornamenti vengono rimandati alla chiusura per proteggere il testo in lavorazione.
 - PWA installabile da Edge/Chrome su PC, con finestra autonoma. Richiede Internet.
-- Super admin per approvare account e assegnare ruoli. Gli admin configurano i Piani nave, gli utenti caricano PDF e modificano le annotazioni, i visualizzatori consultano in sola lettura.
+- Super admin per approvare account e assegnare ruoli. Il super admin configura i Piani nave, gli utenti caricano PDF e modificano le annotazioni, i visualizzatori consultano in sola lettura.
 
 ## Avvio
 
@@ -38,13 +38,16 @@ L'anteprima usa `http://127.0.0.1:4173`. `dist` è il sito statico da pubblicare
 5. Registrare il primo amministratore dall'app e confermare la sua email.
 6. In `002_first_admin.sql` sostituire il segnaposto con l'email dell'amministratore e eseguirlo nel SQL Editor. Il controllo richiede email confermata. Non pubblicare una versione compilata con credenziali amministrative.
 7. Eseguire `supabase/005_ship_plans_roles.sql` una volta. Gli amministratori già approvati diventano super admin. Per una nuova installazione completare il passaggio 6 prima di questa migrazione.
-8. Il super admin abilita i nuovi utenti e ne assegna il ruolo dalla pagina Utenti.
+8. Eseguire `supabase/006_project_cards_ship_setup.sql`.
+9. Il super admin abilita i nuovi utenti e ne assegna il ruolo dalla pagina Utenti.
 
 `src/config.js` contiene l'URL e la sola chiave pubblica/publishable, utilizzabile nel browser. Non inserire `service_role`, secret key o password nel repository. Tutte le autorizzazioni sono applicate anche nel database e nello Storage; il nome autore non dipende dal contenuto inviato dal browser.
 
 ## Piani nave
 
-Aprire un PDF multipagina come Admin o Super admin e scegliere **Piani nave**. Selezionare la pagina longitudinale, indicare due ordinate e la distanza fra loro, quindi posizionare i riferimenti sul disegno. Aggiungere i ponti, scegliere le pagine, nominarli e regolare l'ordine di navigazione. Per ogni ponte, indicare di nuovo i due riferimenti usando la stessa ordinata di origine e posizionare la base del ponte sulla pagina longitudinale.
+Dalla pagina **Documenti del progetto**, il Super admin può scegliere un PDF multipagina come **Piano nave**. Nella schermata dedicata seleziona la pagina longitudinale e le pagine dei ponti. Per ogni tavola posiziona le due ordinate di riferimento e imposta la distanza. Sulla longitudinale indica anche le linee di base dei ponti. Le linee di calibrazione sono visibili nella configurazione.
+
+Le schede dei progetti mostrano copertina, nome e periodo. Per i progetti esistenti, aprire **Modifica progetto** per impostare questi dati. I PDF mostrano la prima pagina. Il selettore **Lingua** imposta italiano o inglese per l’interfaccia.
 
 Nei Piani nave la General Overview è la vista iniziale. Le nuove annotazioni si inseriscono sulle pagine dei ponti. In Overview si possono aprire e modificare le annotazioni esistenti secondo i permessi dell'account. Le note sono proiettate appena sopra la linea di base. Le evidenziazioni sono rappresentate da un simbolo alla posizione longitudinale media del tratto.
 
@@ -62,7 +65,7 @@ Il sito pubblico mostra solo l'accesso. I PDF non si trovano nel repository o ne
 
 `pnpm test` esegue veri test SQL su PostgreSQL locale tramite PGlite, con ruoli e Row Level Security: accesso negato ai non approvati, impossibilità di auto-approvazione, identità autore non falsificabile, numerazione, controllo versione e file privati. PGlite simula le tabelle Auth/Storage necessarie; non sostituisce il collaudo dei servizi Auth/Storage sul progetto Supabase reale.
 
-Su un'installazione esistente applicare `005_ship_plans_roles.sql` a Supabase prima di pubblicare questa release web. Prima dell'uso operativo collaudare con due account: registrazione/conferma, approvazione, importazione PDF, modifiche concorrenti, revoca accesso e recupero password. Il primo amministratore deve usare un indirizzo di cui controlla la casella.
+Prima di pubblicare questa release web, applicare `006_project_cards_ship_setup.sql` dopo la migrazione 005. Ogni progetto può avere un Piano nave. Prima dell'uso operativo collaudare con due account: registrazione/conferma, approvazione, importazione PDF, modifiche concorrenti, revoca accesso e recupero password. Il primo amministratore deve usare un indirizzo di cui controlla la casella.
 
 La versione web richiede Internet; non importa automaticamente i progetti locali dell'APK. Le annotazioni restano separate dal PDF originale. L'autore indica l'account e il nome dichiarato alla registrazione, non una firma digitale. Una revoca blocca le letture successive, ma non può ritirare copie di file già scaricate. Il piano Free non include backup automatici: predisporre copie periodiche di database e file prima dell'uso operativo.
 

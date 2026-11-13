@@ -3,19 +3,20 @@ import {normalized,segmentDistance,contrast,clamp} from './model.js';
 pdfjs.GlobalWorkerOptions.workerSrc=new URL('./vendor/build/pdf.worker.mjs',import.meta.url).href;
 const vendor=new URL('./vendor/',import.meta.url).href;
 export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendor+'cmaps/',cMapPacked:true,standardFontDataUrl:vendor+'standard_fonts/',wasmUrl:vendor+'wasm/',iccUrl:vendor+'iccs/',isEvalSupported:false}).promise;}
-const symbolPaths = {
- flame:'M 12 2 C 16 7 21 10 21 15 A 9 9 0 0 1 3 15 C 3 11 6 8 9 6 C 8 12 13 10 12 2 Z M 12 13 C 8 17 9 20 12 20 C 15 20 16 17 12 13 Z',
- warning:'M 12 2 L 23 21 H 1 Z M 11 8 H 13 V 15 H 11 Z M 11 17 H 13 V 19 H 11 Z',
- electric:'M 13 1 L 3 14 H 10 L 9 23 L 21 9 H 14 Z',
- tool:'M 21 3 L 16 8 L 13 5 L 18 1 C 12 0 8 5 10 11 L 2 19 A 2.8 2.8 0 0 0 6 23 L 14 15 C 20 17 24 9 21 3 Z',
- highlight:'M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z'
-};
-const iconPaths=Object.fromEntries(Object.entries(symbolPaths).map(([key,value])=>[key,new Path2D(value)]));
+import {emojiSymbols} from './ship-model.js';
+const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
 const projectedOffset=markerRadius+5;
 
 export function marker(ctx,x,y,color,shape,number,r=markerRadius){
  ctx.save();
+ if(emojiSymbols[shape]){
+  ctx.font=`${r*1.8}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+  ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#202020';
+  ctx.fillText(emojiSymbols[shape],x,y);
+  ctx.restore();
+  return;
+ }
  ctx.beginPath();
  if(shape==='square')ctx.rect(x-r,y-r,r*2,r*2);
  else if(shape==='diamond'){ctx.moveTo(x,y-r*1.3);ctx.lineTo(x+r*1.3,y);ctx.lineTo(x,y+r*1.3);ctx.lineTo(x-r*1.3,y);ctx.closePath();}
@@ -23,10 +24,10 @@ export function marker(ctx,x,y,color,shape,number,r=markerRadius){
  else ctx.arc(x,y,r,0,Math.PI*2);
  ctx.strokeStyle='white';ctx.lineWidth=4;ctx.stroke();ctx.fillStyle=color;ctx.fill();
  ctx.fillStyle=contrast(color);
- if(iconPaths[shape]){
+ if(shape==='highlight'){
   const size=r*1.4;
   ctx.translate(x-size/2,y-size/2);ctx.scale(size/24,size/24);
-  ctx.fill(iconPaths[shape],'evenodd');
+  ctx.fill(highlightPath);
  }else if(number){
   ctx.font='700 12px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
   ctx.fillText(number,x,y+(shape==='triangle'?2:0),r*1.4);
@@ -43,16 +44,34 @@ export class Viewer{
  constructor(container,canvas,overlay,callbacks){Object.assign(this,{container,canvas,overlay,callbacks,zoom:1,panX:0,panY:0,mode:null,marks:[],pageNumber:1,pointers:new Map(),settings:{note:{color:'#ef5350',shape:'circle'},highlight:{color:'#e9b824',width:18,opacity:35}},revision:0});this.resize=new ResizeObserver(()=>this.draw());this.resize.observe(container);container.addEventListener('pointerdown',e=>this.down(e));container.addEventListener('pointermove',e=>this.move(e));container.addEventListener('pointerup',e=>this.up(e));container.addEventListener('pointercancel',()=>{this.pointers.clear();this.stroke=null;this.draw();});container.addEventListener('wheel',e=>{e.preventDefault();const p=this.local(e);this.zoomAt(Math.exp(-e.deltaY*.002),p.x,p.y);},{passive:false});}
  local(e){const r=this.container.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};}
  async open(pdf,page=1){this.clear();this.pdf=pdf;await this.page(page);}
- clear(){this.revision++;clearTimeout(this.timer);this.task?.cancel();this.pdf=null;this.pdfPage=null;this.detail=null;this.marks=[];this.pick=null;this.guide=null;this.mode=null;this.stroke=null;this.pointers.clear();this.draw();}
- async page(n){if(!this.pdf)return;const rev=++this.revision;this.task?.cancel();clearTimeout(this.timer);const p=await this.pdf.getPage(n);if(rev!==this.revision)return;this.pdfPage=p;this.pageNumber=n;this.zoom=1;this.panX=this.panY=0;this.detail=null;this.draw();}
+ clear(){this.pageRequest=(this.pageRequest||0)+1;this.revision++;clearTimeout(this.timer);this.task?.cancel();this.pdf=null;this.pdfPage=null;this.detail=null;this.marks=[];this.pick=null;this.guides=[];this.mode=null;this.stroke=null;this.pointers.clear();this.draw();}
+ async page(n){if(!this.pdf)return;const request=this.pageRequest=(this.pageRequest||0)+1;this.revision++;this.task?.cancel();clearTimeout(this.timer);const p=await this.pdf.getPage(n);if(request!==this.pageRequest)return;this.task?.cancel();this.pdfPage=p;this.pageNumber=n;this.zoom=1;this.panX=this.panY=0;this.detail=null;this.draw();}
  rect(){if(!this.pdfPage)return null;const v=this.pdfPage.getViewport({scale:1}),w=this.container.clientWidth,h=this.container.clientHeight;const scale=Math.max(.0001,Math.min((w-24)/v.width,(h-24)/v.height))*this.zoom;return {x:(w-v.width*scale)/2+this.panX,y:(h-v.height*scale)/2+this.panY,w:v.width*scale,h:v.height*scale,scale};}
+ focus(x,y,visibleWidth=this.container.clientWidth){
+  if(!this.pdfPage)return;
+  this.zoom=Math.max(this.zoom,3);
+  this.panX=this.panY=0;
+  const rect=this.rect();
+  this.panX=visibleWidth/2-(rect.x+x*rect.w);
+  this.panY=this.container.clientHeight/2-(rect.y+y*rect.h);
+  this.draw();
+ }
  fit(){this.zoom=1;this.panX=this.panY=0;this.draw();}
  zoomAt(f,x,y){const r=this.rect();if(!r)return;const next=Math.max(1,this.zoom*f);if(!Number.isFinite(next))return;const ratio=next/this.zoom;this.panX=(this.panX+this.container.clientWidth/2-x)*ratio+x-this.container.clientWidth/2;this.panY=(this.panY+this.container.clientHeight/2-y)*ratio+y-this.container.clientHeight/2;this.zoom=next;this.draw();}
  setMarks(marks){this.marks=marks;this.draw(false);}
  draw(render=true){const w=this.container.clientWidth,h=this.container.clientHeight;if(!w||!h)return;this.ratio=Math.min(devicePixelRatio||1,Math.sqrt(10000000/(w*h)));for(const c of [this.canvas,this.overlay]){if(c.width!==Math.round(w*this.ratio)||c.height!==Math.round(h*this.ratio)){c.width=Math.round(w*this.ratio);c.height=Math.round(h*this.ratio);}}
  const ctx=this.canvas.getContext('2d');ctx.setTransform(this.ratio,0,0,this.ratio,0,0);ctx.clearRect(0,0,w,h);const ov=this.overlay.getContext('2d');ov.setTransform(this.ratio,0,0,this.ratio,0,0);ov.clearRect(0,0,w,h);const r=this.rect();if(!r)return;ctx.fillStyle='white';ctx.fillRect(r.x,r.y,r.w,r.h);if(this.detail){const d=this.detail,k=r.scale/d.rect.scale;ctx.drawImage(d.canvas,(r.x-d.rect.x*k),(r.y-d.rect.y*k),d.w*k,d.h*k);}
  ov.save();ov.beginPath();ov.rect(r.x,r.y,r.w,r.h);ov.clip();for(const a of this.marks.filter(a=>a.page===this.pageNumber&&!a.deleted&&a.kind==='highlight'))this.line(ov,a.points,a.color,a.width,a.opacity,r);if(this.stroke)this.line(ov,this.stroke,this.settings.highlight.color,this.settings.highlight.width,this.settings.highlight.opacity,r);for(const a of this.marks.filter(a=>a.page===this.pageNumber&&!a.deleted&&a.kind==='note'))marker(ov,r.x+a.x*r.w,markerY(a,r),a.color,a.shape,a.number);
- if(this.guide){const [value,axis]=this.guide;ov.strokeStyle='#008d8e';ov.lineWidth=2;ov.setLineDash([7,5]);ov.beginPath();if(axis){ov.moveTo(r.x,r.y+value*r.h);ov.lineTo(r.x+r.w,r.y+value*r.h);}else{ov.moveTo(r.x+value*r.w,r.y);ov.lineTo(r.x+value*r.w,r.y+r.h);}ov.stroke();}
+ for(const {value,axis,label,color} of this.guides||[]){
+  ov.strokeStyle=color;ov.fillStyle=color;ov.lineWidth=2;ov.setLineDash([7,5]);ov.beginPath();
+  const x=r.x+value*r.w,y=r.y+value*r.h;
+  if(axis){ov.moveTo(r.x,y);ov.lineTo(r.x+r.w,y);}
+  else{ov.moveTo(x,r.y);ov.lineTo(x,r.y+r.h);}
+  ov.stroke();
+  ov.font='700 13px system-ui';
+  const tx=axis?Math.max(4,r.x+6):x+5,ty=axis?y-6:Math.max(16,r.y+17);
+  ov.lineWidth=4;ov.strokeStyle='white';ov.strokeText(label,tx,ty);ov.fillText(label,tx,ty);
+ }
  ov.restore();if(render){this.revision++;clearTimeout(this.timer);this.timer=setTimeout(()=>this.renderDetail(),100);}}
  line(ctx,points,color,width,opacity,r){if(!points?.length)return;ctx.save();ctx.beginPath();points.forEach((p,i)=>{const x=r.x+p[0]*r.w,y=r.y+p[1]*r.h;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.strokeStyle=color;ctx.globalAlpha=opacity/100;ctx.lineWidth=width*r.scale;ctx.lineCap=ctx.lineJoin='round';ctx.stroke();ctx.restore();}
  async renderDetail(){const p=this.pdfPage,r=this.rect(),rev=this.revision;if(!p||!r)return;this.task?.cancel();const w=this.container.clientWidth,h=this.container.clientHeight,out=document.createElement('canvas');out.width=this.canvas.width;out.height=this.canvas.height;const ratio=this.ratio;try{const ctx=out.getContext('2d');this.task=p.render({canvasContext:ctx,viewport:p.getViewport({scale:r.scale}),transform:[ratio,0,0,ratio,r.x*ratio,r.y*ratio],background:'rgba(0,0,0,0)'});await this.task.promise;if(rev!==this.revision)return;this.detail={canvas:out,rect:r,w,h};this.draw(false);}catch(e){if(e.name!=='RenderingCancelledException')this.callbacks.error(e);}}
