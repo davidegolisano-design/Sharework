@@ -1,9 +1,9 @@
 import * as pdfjs from './vendor/build/pdf.mjs';
-import {normalized,segmentDistance,contrast,clamp,annotationStrokes,expandOverlappingMarkers} from './model.js?v=3188c8a21bcf';
+import {normalized,segmentDistance,contrast,clamp,annotationStrokes,expandOverlappingMarkers} from './model.js?v=ec4dcd35266b';
 pdfjs.GlobalWorkerOptions.workerSrc=new URL('./vendor/build/pdf.worker.mjs',import.meta.url).href;
 const vendor=new URL('./vendor/',import.meta.url).href;
 export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendor+'cmaps/',cMapPacked:true,standardFontDataUrl:vendor+'standard_fonts/',wasmUrl:vendor+'wasm/',iccUrl:vendor+'iccs/',isEvalSupported:false}).promise;}
-import {emojiSymbols} from './ship-model.js?v=3188c8a21bcf';
+import {emojiSymbols} from './ship-model.js?v=ec4dcd35266b';
 const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
 // Use the part of the viewport covered by the sheet, including height-fitted overviews.
@@ -79,22 +79,12 @@ function markPosition(annotation,rect){
 
 function markerBounds(annotation,rect){
  const [x,y]=markPosition(annotation,rect);
- const bounds={left:x-12,right:x+12,top:y-8,bottom:y+8};
- if(annotation.kind==='note'){
-  const radius=markerRadius*1.3+2;
-  bounds.left=x-radius;
-  bounds.right=x+radius;
-  bounds.top=y-radius;
-  bounds.bottom=y+radius;
-  if(emojiSymbols[annotation.shape]&&annotation.number!=null){
-   const badgeHalfWidth=Math.max(7,String(annotation.number).length*4+3)+1;
-   bounds.right=Math.max(bounds.right,x+markerRadius*.65+badgeHalfWidth);
-   bounds.bottom=Math.max(bounds.bottom,y+markerRadius*.45+14);
-  }
- }else if(annotation.number!=null){
-  const halfWidth=Math.max(7,String(annotation.number).length*4+3)+1;
-  bounds.left=x-halfWidth;
-  bounds.right=x+halfWidth;
+ const radius=markerRadius*1.3+2;
+ const bounds={left:x-radius,right:x+radius,top:y-radius,bottom:y+radius};
+ if(emojiSymbols[annotation.shape]&&annotation.number!=null){
+  const badgeHalfWidth=Math.max(7,String(annotation.number).length*4+3)+1;
+  bounds.right=Math.max(bounds.right,x+markerRadius*.65+badgeHalfWidth);
+  bounds.bottom=Math.max(bounds.bottom,y+markerRadius*.45+14);
  }
  return bounds;
 }
@@ -130,8 +120,14 @@ function drawLaser(ctx, rect, laser) {
 }
 
 export class Viewer{
- constructor(container,canvas,overlay,callbacks){Object.assign(this,{container,canvas,overlay,callbacks,zoom:1,panX:0,panY:0,mode:null,marks:[],pageNumber:1,pointers:new Map(),settings:{note:{color:'#ef5350',shape:'circle'},highlight:{color:'#e9b824',width:18,opacity:35}},revision:0});this.resize=new ResizeObserver(()=>this.draw());this.resize.observe(container);container.addEventListener('pointerdown',e=>this.down(e));container.addEventListener('pointermove',e=>this.move(e));container.addEventListener('pointerup',e=>this.up(e));container.addEventListener('pointercancel',()=>{this.pointers.clear();this.stroke=null;this.draw();});container.addEventListener('wheel',e=>{e.preventDefault();const p=this.local(e);this.zoomAt(Math.exp(-e.deltaY*.002),p.x,p.y);},{passive:false});}
- local(e){const r=this.container.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};}
+ constructor(container,canvas,overlay,callbacks){Object.assign(this,{container,canvas,overlay,callbacks,zoom:1,panX:0,panY:0,mode:null,marks:[],pageNumber:1,pointers:new Map(),settings:{note:{color:'#ef5350',shape:'circle'},highlight:{color:'#e9b824',width:18,opacity:35}},revision:0});this.resize=new ResizeObserver(()=>this.draw());this.resize.observe(container);container.addEventListener('pointerdown',e=>this.down(e));container.addEventListener('pointermove',e=>this.move(e));container.addEventListener('pointerup',e=>this.up(e));container.addEventListener('pointercancel',e=>this.cancelPointer(e));container.addEventListener('lostpointercapture',e=>this.cancelPointer(e));container.addEventListener('wheel',e=>{e.preventDefault();const p=this.local(e);this.zoomAt(Math.exp(-e.deltaY*.002),p.x,p.y);},{passive:false});}
+ local(e){
+  const bounds=this.container.getBoundingClientRect();
+  return {
+   x:(e.clientX-bounds.left)*this.container.clientWidth/bounds.width,
+   y:(e.clientY-bounds.top)*this.container.clientHeight/bounds.height
+  };
+ }
  async open(pdf,page=1){this.clear();this.pdf=pdf;await this.page(page);}
  clear(){this.pageRequest=(this.pageRequest||0)+1;this.revision++;clearTimeout(this.timer);this.task?.cancel();this.pdf=null;this.pdfPage=null;this.detail=null;this.marks=[];this.areaDraft=null;this.laser=null;this.pick=null;this.guides=[];this.mode=null;this.stroke=null;this.pointers.clear();this.draw();}
  async page(n){if(!this.pdf)return;const request=this.pageRequest=(this.pageRequest||0)+1;this.revision++;this.task?.cancel();clearTimeout(this.timer);const p=await this.pdf.getPage(n);if(request!==this.pageRequest)return;this.task?.cancel();this.pdfPage=p;this.pageNumber=n;this.zoom=1;this.minZoom=1;this.panX=this.panY=0;this.detail=null;this.draw();}
@@ -181,8 +177,7 @@ export class Viewer{
  for(const a of marks){
   if(a.id===this.areaDraft?.id)continue;
   const [x,y]=markPosition(a,r);
-  if(a.kind==='note')marker(ov,x,y,a.color,a.shape,a.number);
-  else numberBadge(ov,x,y,a.number);
+  marker(ov,x,y,a.color,a.shape,a.number);
  }
  if(this.areaDraft){
   const {strokes,color,width,opacity}=this.areaDraft;
@@ -218,9 +213,111 @@ export class Viewer{
   ctx.restore();
  }
  async renderDetail(){const p=this.pdfPage,r=this.rect(),rev=this.revision;if(!p||!r)return;this.task?.cancel();const w=this.container.clientWidth,h=this.container.clientHeight,out=document.createElement('canvas');out.width=this.canvas.width;out.height=this.canvas.height;const ratio=this.ratio;try{const ctx=out.getContext('2d');this.task=p.render({canvasContext:ctx,viewport:p.getViewport({scale:r.scale}),transform:[ratio,0,0,ratio,r.x*ratio,r.y*ratio],background:'rgba(0,0,0,0)'});await this.task.promise;if(rev!==this.revision)return;this.detail={canvas:out,rect:r,w,h};this.draw(false);}catch(e){if(e.name!=='RenderingCancelledException')this.callbacks.error(e);}}
- down(e){if(!this.pdfPage)return;e.preventDefault();this.container.setPointerCapture(e.pointerId);const p=this.local(e);this.pointers.set(e.pointerId,p);if(this.pointers.size===1){this.start=p;this.last=p;this.moved=false;this.multi=false;const r=this.rect();if(this.mode==='area'&&p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h)this.stroke=[normalized(p.x,p.y,r)];}else{this.multi=true;this.stroke=null;const a=[...this.pointers.values()];this.distance=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);this.center={x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2};}}
- move(e){if(!this.pointers.has(e.pointerId))return;const p=this.local(e);this.pointers.set(e.pointerId,p);if(this.pointers.size>=2){const a=[...this.pointers.values()],distance=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y),center={x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2};if(this.distance>0)this.zoomAt(distance/this.distance,center.x,center.y);this.panX+=center.x-this.center.x;this.panY+=center.y-this.center.y;this.distance=distance;this.center=center;this.draw();return;}this.moved||=Math.hypot(p.x-this.start.x,p.y-this.start.y)>(this.areaDraft||e.pointerType!=='touch'?3:12);if(this.stroke){if(this.stroke.length<20000)this.stroke.push(normalized(p.x,p.y,this.rect()));this.draw(false);}else if((!this.mode||this.multi)&&this.moved){this.panX+=p.x-this.last.x;this.panY+=p.y-this.last.y;this.draw();}if(this.moved||this.stroke)this.last=p;}
- up(e){if(!this.pointers.has(e.pointerId))return;const p=this.local(e);this.pointers.delete(e.pointerId);if(this.pointers.size){this.last=[...this.pointers.values()][0];return;}if(!this.multi){if(this.stroke&&this.moved){const points=this.stroke;this.stroke=null;this.callbacks.stroke?.(points);}else if(!this.moved&&!this.areaDraft){const r=this.rect();if(this.pick){if(p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h)this.pick(normalized(p.x,p.y,r));this.draw(false);return;}if(this.laser&&p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h){this.callbacks.laser?.(normalized(p.x,p.y,r));return;}const hit=this.hit(p.x,p.y,e.pointerType);if(hit.length)this.callbacks.edit(hit);else if(this.mode==='note'){const r=this.rect();if(p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h){const [x,y]=normalized(p.x,p.y,r);this.callbacks.create({kind:'note',x,y,...this.settings.note,points:[],width:18,opacity:100});}}}}this.stroke=null;this.draw(false);}
+ pinchState(){
+  const [first,second]=this.pointers.values();
+  if(!second)return null;
+  return {
+   distance:Math.hypot(first.x-second.x,first.y-second.y),
+   x:(first.x+second.x)/2,
+   y:(first.y+second.y)/2
+  };
+ }
+
+ down(e){
+  if(!this.pdfPage)return;
+  e.preventDefault();
+  this.container.setPointerCapture(e.pointerId);
+  const point=this.local(e);
+  this.pointers.set(e.pointerId,point);
+  if(this.pointers.size>1){
+   this.multi=true;
+   this.stroke=null;
+   this.pinch=this.pinchState();
+   return;
+  }
+  this.start=this.last=point;
+  this.moved=this.multi=false;
+  this.pinch=null;
+  this.stroke=this.mode==='area'&&this.onSheet(point)?[normalized(point.x,point.y,this.rect())]:null;
+ }
+
+ onSheet({x,y}){
+  const rect=this.rect();
+  return rect&&x>=rect.x&&x<=rect.x+rect.w&&y>=rect.y&&y<=rect.y+rect.h;
+ }
+
+ move(e){
+  if(!this.pointers.has(e.pointerId))return;
+  const point=this.local(e);
+  this.pointers.set(e.pointerId,point);
+  if(this.pointers.size>=2){
+   const next=this.pinchState(),previous=this.pinch;
+   if(previous?.distance>0&&next.distance>0){
+    // Anchor the scale at the old midpoint, then follow the fingers' translation.
+    const zoom=Math.max(this.minZoom??1,this.zoom*next.distance/previous.distance);
+    const ratio=zoom/this.zoom;
+    const centerX=this.container.clientWidth/2,centerY=this.container.clientHeight/2;
+    this.panX=(this.panX+centerX-previous.x)*ratio+next.x-centerX;
+    this.panY=(this.panY+centerY-previous.y)*ratio+next.y-centerY;
+    this.zoom=zoom;
+    this.draw();
+   }
+   this.pinch=next;
+   return;
+  }
+  this.moved||=Math.hypot(point.x-this.start.x,point.y-this.start.y)>(this.areaDraft||e.pointerType!=='touch'?3:12);
+  if(this.stroke){
+   if(this.stroke.length<20000)this.stroke.push(normalized(point.x,point.y,this.rect()));
+   this.draw(false);
+  }else if((!this.mode||this.multi)&&this.moved){
+   this.panX+=point.x-this.last.x;
+   this.panY+=point.y-this.last.y;
+   this.draw();
+  }
+  if(this.moved||this.stroke)this.last=point;
+ }
+
+ releasePointer(id){
+  if(!this.pointers.delete(id))return false;
+  this.pinch=this.pinchState();
+  if(this.pointers.size)this.start=this.last=this.pointers.values().next().value;
+  return true;
+ }
+
+ cancelPointer(e){
+  if(!this.releasePointer(e.pointerId))return;
+  this.multi=true;
+  this.stroke=null;
+  this.draw(false);
+ }
+
+ up(e){
+  if(!this.releasePointer(e.pointerId)||this.pointers.size)return;
+  const stroke=this.stroke;
+  this.stroke=null;
+  if(this.multi||this.moved){
+   if(!this.multi&&stroke)this.callbacks.stroke?.(stroke);
+   this.draw(false);
+   return;
+  }
+  if(this.areaDraft){this.draw(false);return;}
+  const point=this.local(e);
+  const inside=this.onSheet(point);
+  if(this.pick||this.laser){
+   if(inside){
+    const position=normalized(point.x,point.y,this.rect());
+    if(this.pick)this.pick(position);
+    else this.callbacks.laser?.(position);
+   }
+   return;
+  }
+  const hits=this.hit(point.x,point.y,e.pointerType);
+  if(hits.length){this.callbacks.edit(hits);return;}
+  if(this.mode==='note'&&inside){
+   const [x,y]=normalized(point.x,point.y,this.rect());
+   this.callbacks.create({kind:'note',x,y,...this.settings.note,points:[],width:18,opacity:100});
+  }
+ }
  hit(x,y,pointerType){
   const rect=this.rect();
   if(!rect)return [];

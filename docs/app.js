@@ -1,11 +1,11 @@
-import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=3188c8a21bcf';
-import {projectCover} from './cards.js?v=3188c8a21bcf';
-import {watchChanges} from './realtime.js?v=3188c8a21bcf';
-import * as api from './api.js?v=3188c8a21bcf';
-import {Viewer,loadPdf,marker,numberBadge} from './viewer.js?v=3188c8a21bcf';
-import {snapshot,grouped,clamp,annotationStrokes} from './model.js?v=3188c8a21bcf';
-import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,placeLaser,laserOnPage} from './ship-model.js?v=3188c8a21bcf';
-import {editShipPlan} from './ship-editor.js?v=3188c8a21bcf';
+import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=ec4dcd35266b';
+import {projectCover} from './cards.js?v=ec4dcd35266b';
+import {watchChanges} from './realtime.js?v=ec4dcd35266b';
+import * as api from './api.js?v=ec4dcd35266b';
+import {Viewer,loadPdf,marker} from './viewer.js?v=ec4dcd35266b';
+import {snapshot,grouped,clamp,annotationStrokes} from './model.js?v=ec4dcd35266b';
+import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,placeLaser,laserOnPage} from './ship-model.js?v=ec4dcd35266b';
+import {editShipPlan} from './ship-editor.js?v=ec4dcd35266b';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
 let stopRealtime=null,refreshTimer;
 let user,profile,projects=[],project,projectLevel,activeDocument,annotations=[],pdf,authMode='login',dialogClose=null,dialogOpen=false,polling=false,epoch=0;
@@ -417,7 +417,16 @@ $('notes-scope').onchange=()=>{
  localStorage.setItem('sw.all',all);
  refreshList();
 };
-function badge(a){const c=document.createElement('canvas');c.className='badge';c.width=c.height=70;const ctx=c.getContext('2d');ctx.scale(2,2);if(a.kind==='note')marker(ctx,17.5,17.5,a.color,a.shape,a.number,12);else{ctx.strokeStyle=a.color;ctx.globalAlpha=a.opacity/100;ctx.lineWidth=10;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(6,17);ctx.lineTo(29,17);ctx.stroke();ctx.globalAlpha=1;numberBadge(ctx,18,17,a.number);}return c;}
+function badge(a){
+ const canvas=document.createElement('canvas');
+ canvas.className='badge';
+ canvas.width=canvas.height=70;
+ const ctx=canvas.getContext('2d');
+ ctx.scale(2,2);
+ marker(ctx,17.5,17.5,a.color,a.shape,a.number,12);
+ return canvas;
+}
+
 for(const id of filterIds) $(id).oninput=refreshList;
 $('notes-reset').onclick=()=>{
  all=false;localStorage.setItem('sw.all',all);
@@ -565,7 +574,7 @@ async function openAnnotation(initial,before=initial){
  for(const el of [title,description])el.oninput=()=>{clearTimeout(timer);timer=setTimeout(flush,500);};
  $('dialog-footer').append(btn(tr('Aspetto'),async()=>{
   await closeModal();
-  if(!dialogOpen)await toolSettings(annotationStrokes(current).length?"highlight":current.kind,current);
+  if(!dialogOpen)await toolSettings(current);
  }));
  if(current.kind==='note'){
   $('dialog-footer').append(btn(tr(current.strokes?.length?'Modifica area':'Evidenzia area'),async()=>{
@@ -706,23 +715,46 @@ async function annotationMenu(annotation){
  const box=modal(annotationHeading(annotation));
  box.append(btn(tr('Impostazioni aspetto'),async()=>{
   await closeModal();
-  if(!dialogOpen)await toolSettings(annotationStrokes(annotation).length?"highlight":annotation.kind,annotation);
+  if(!dialogOpen)await toolSettings(annotation);
  }));
  box.append(deleteAnnotationButton(remove=>remove(annotation)));
 }
-async function toolSettings(kind,existing=null){if(!canWrite()||finishPick||(!existing&&!canPlace()))return;const initial=existing?structuredClone(existing):structuredClone(viewer.settings[kind]);let choice={...initial},current=existing;const box=modal(tr(kind==='note'?'Impostazioni nota':'Impostazioni evidenziatore'));const canvas=document.createElement('canvas');canvas.className='settings-preview';canvas.width=430;canvas.height=65;box.append(canvas);const preview=()=>{const c=canvas.getContext('2d');c.clearRect(0,0,430,65);if(kind==='note')marker(c,215,32,choice.color,choice.shape,existing?.number||1);else{c.strokeStyle=choice.color;c.globalAlpha=choice.opacity/100;c.lineWidth=choice.width;c.lineCap='round';c.beginPath();c.moveTo(40,32);c.lineTo(390,32);c.stroke();c.globalAlpha=1;}};const color=field(box,tr('Colore'),{type:'color',value:choice.color});color.oninput=()=>{choice.color=color.value;preview();};if(kind==='note'){
+async function toolSettings(existing=null){
+ if(!canWrite()||finishPick||areaSession||(!existing&&!canPlace()))return;
+ const choice=structuredClone(existing||viewer.settings.note);
+ const hasArea=Boolean(existing&&annotationStrokes(existing).length);
+ const box=modal(tr(existing?.kind==='highlight'?'Impostazioni evidenziatore':'Impostazioni nota'));
+ const canvas=document.createElement('canvas');
+ canvas.className='settings-preview';canvas.width=430;canvas.height=65;
+ box.append(canvas);
+ const color=field(box,tr('Colore'),{type:'color',value:choice.color});
  const options=text('div','','symbol-picker');
- const update=()=>{
-  color.parentElement.hidden=Boolean(emojiSymbols[choice.shape]);
+
+ function preview(){
+  const ctx=canvas.getContext('2d');
+  ctx.clearRect(0,0,430,65);
+  if(hasArea){
+   ctx.strokeStyle=choice.color;ctx.globalAlpha=choice.opacity/100;
+   ctx.lineWidth=choice.width;ctx.lineCap='round';
+   ctx.beginPath();ctx.moveTo(40,32);ctx.lineTo(390,32);ctx.stroke();
+   ctx.globalAlpha=1;
+  }
+  marker(ctx,215,32,choice.color,choice.shape,existing?.number||1);
+ }
+
+ function updateSymbol(){
+  color.parentElement.hidden=!hasArea&&Boolean(emojiSymbols[choice.shape]);
   for(const button of options.children){
    const selected=button.dataset.symbol===choice.shape;
    button.classList.toggle('selected',selected);
    button.setAttribute('aria-pressed',String(selected));
   }
   preview();
- };
+ }
+
+ color.oninput=()=>{choice.color=color.value;preview();};
  for(const [shape,label] of noteShapes){
-  const button=btn('',()=>{choice.shape=shape;update();},'symbol-choice');
+  const button=btn('',()=>{choice.shape=shape;updateSymbol();},'symbol-choice');
   button.dataset.symbol=shape;
   button.title=tr(label);
   button.setAttribute('aria-label',tr(label));
@@ -733,9 +765,37 @@ async function toolSettings(kind,existing=null){if(!canWrite()||finishPick||(!ex
   button.append(icon);
   options.append(button);
  }
- box.append(options);update();
-}else{const width=field(box,tr('Spessore')+': '+choice.width,{type:'range',value:choice.width,min:2,max:60,step:1});width.oninput=()=>{choice.width=Number(width.value);width.parentElement.firstChild.textContent=tr('Spessore')+': '+choice.width;preview();};const alpha=field(box,tr('Trasparenza')+': '+(100-choice.opacity)+'%',{type:'range',value:100-choice.opacity,min:0,max:100,step:1});alpha.oninput=()=>{choice.opacity=100-Number(alpha.value);alpha.parentElement.firstChild.textContent=tr('Trasparenza')+': '+alpha.value+'%';preview();};}preview();$('dialog-footer').append(btn(tr('Applica'),async()=>{const changes=kind==='note'?{shape:choice.shape,...(emojiSymbols[choice.shape]?{}:{color:choice.color})}:{color:choice.color,width:choice.width,opacity:choice.opacity};if(existing){const after=await patch(current,changes);record(existing,after);}else{viewer.settings[kind]={...viewer.settings[kind],...changes};localStorage.setItem('sw.tools',JSON.stringify(viewer.settings));}await closeModal();},'primary'));}
-$('note-settings').onclick=()=>toolSettings('note').catch(report);
+ box.append(options);
+ if(hasArea){
+  const width=field(box,tr('Spessore')+': '+choice.width,{type:'range',value:choice.width,min:2,max:60,step:1});
+  width.oninput=()=>{
+   choice.width=Number(width.value);
+   width.parentElement.firstChild.textContent=tr('Spessore')+': '+choice.width;
+   preview();
+  };
+  const alpha=field(box,tr('Trasparenza')+': '+(100-choice.opacity)+'%',{type:'range',value:100-choice.opacity,min:0,max:100,step:1});
+  alpha.oninput=()=>{
+   choice.opacity=100-Number(alpha.value);
+   alpha.parentElement.firstChild.textContent=tr('Trasparenza')+': '+alpha.value+'%';
+   preview();
+  };
+ }
+ updateSymbol();
+ $('dialog-footer').append(btn(tr('Applica'),async()=>{
+  const changes={shape:choice.shape};
+  if(hasArea||!emojiSymbols[choice.shape])changes.color=choice.color;
+  if(hasArea){changes.width=choice.width;changes.opacity=choice.opacity;}
+  if(existing){
+   const after=await patch(existing,changes);
+   record(existing,after);
+  }else{
+   Object.assign(viewer.settings.note,changes);
+   localStorage.setItem('sw.tools',JSON.stringify(viewer.settings));
+  }
+  await closeModal();
+ },'primary'));
+}
+$('note-settings').onclick=()=>toolSettings().catch(report);
 async function travel(isRedo){if(!canWrite()||finishPick||areaSession)return;const from=isRedo?redo:undo,to=isRedo?undo:redo,item=from.at(-1);if(!item||loading)return;const current=annotations.find(a=>a.id===item.id);if(!current||current.version!==item.expected)throw Error(tr('Annotazione aggiornata da un altro utente: impossibile annullare senza sovrascriverla.'));const result=await patch(current,isRedo?item.after:item.before);from.pop();to.push({...item,expected:result.version});const previous=from.findLast(entry=>entry.id===item.id);if(previous&&JSON.stringify(snapshot(result))===JSON.stringify(isRedo?previous.before:previous.after))previous.expected=result.version;updatePages();}
 $('undo').onclick=()=>travel(false).catch(report);$('redo').onclick=()=>travel(true).catch(report);
 $('users-button').onclick=()=>manageUsers().catch(report);
