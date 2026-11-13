@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {grouped,normalized,segmentDistance,snapshot} from '../src/model.js';
+import test from 'node:test';import assert from 'node:assert/strict';import {grouped,normalized,segmentDistance,snapshot,expandOverlappingMarkers} from '../src/model.js';
 test('Grouping, normalized coordinates and hit detection',()=>{
  const a=[{id:1,page:3,created_at:'a'},{id:2,page:1,created_at:'b'},{id:3,page:1,created_at:'a'},{id:4,page:1,created_at:'c',deleted:true}];
  assert.deepEqual(grouped(a,1,false).map(x=>x.id),[3,2]);assert.deepEqual(grouped(a,1,true).map(x=>x.id),[3,2,1]);
@@ -72,4 +72,15 @@ test('A multi-stroke note projects separate intervals under one note identity',(
  assert.equal(marks.length,1);
  assert.deepEqual([mark.id,mark.kind,mark.shape,mark.number],['shared','note','circle',3]);
  assert.ok(mark.strokes[0][1][0]<mark.strokes[1][0][0]);
+});
+
+test('A tap on the edge of a marker includes the whole overlapping stack',()=>{
+ const candidate=(id,left,distance,top=0)=>({id,distance,bounds:{left,right:left+34,top,bottom:top+34}});
+ const front=candidate('front',0,0);
+ const hidden=candidate('hidden',30,30);
+ const behind=candidate('behind',60,60);
+ const detached=candidate('detached',100,100);
+ const above=candidate('above',30,50,-40);
+ assert.deepEqual(expandOverlappingMarkers([front,hidden,behind,detached,above],20).map(item=>item.id),['front','hidden','behind']);
+ assert.deepEqual(expandOverlappingMarkers([front,hidden],-1),[]);
 });

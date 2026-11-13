@@ -11,3 +11,21 @@ export function annotationStrokes(annotation){
  if(annotation.kind==='highlight'&&annotation.points?.length)return [annotation.points];
  return [];
 }
+
+// A tap anywhere on a visible marker can select the entire stack, including
+// markers reached through an overlap with another marker in the stack.
+export function expandOverlappingMarkers(candidates,radius){
+ const selected=new Set(candidates.filter(item=>item.distance<=radius));
+ const queue=[...selected];
+ for(let i=0;i<queue.length;i++){
+  const a=queue[i].bounds;
+  for(const item of candidates){
+   if(selected.has(item))continue;
+   const b=item.bounds;
+   if(a.left>b.right||a.right<b.left||a.top>b.bottom||a.bottom<b.top)continue;
+   selected.add(item);
+   queue.push(item);
+  }
+ }
+ return queue;
+}
