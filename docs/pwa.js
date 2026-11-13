@@ -1,4 +1,4 @@
-import {tr} from './locale.js?v=ec4dcd35266b';
+import {tr} from './locale.js?v=17d96b2f795f';
 let installEvent;
 const buttons=[];
 const standalone=matchMedia('(display-mode: standalone)');
