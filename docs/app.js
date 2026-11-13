@@ -1,5 +1,5 @@
 import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js';
-import {projectCover, documentThumbnail, resetThumbnails} from './cards.js';
+import {projectCover} from './cards.js';
 import {watchChanges} from './realtime.js';
 import * as api from './api.js';
 import {Viewer,loadPdf,marker} from './viewer.js';
@@ -8,22 +8,24 @@ import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols} from './
 import {editShipPlan} from './ship-editor.js';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
 let stopRealtime=null,refreshTimer;
-let user,profile,projects=[],project,documents=[],activeDocument,annotations=[],pdf,authMode='login',dialogClose=null,dialogOpen=false,polling=false,epoch=0;
+let user,profile,projects=[],project,projectLevel,activeDocument,annotations=[],pdf,authMode='login',dialogClose=null,dialogOpen=false,polling=false,epoch=0;
 let all=localStorage.getItem('sw.all')==='true',panelWidth=Number(localStorage.getItem('sw.panelWidth'))||290,panelHidden=false,undo=[],redo=[],loading=false;
 const roles = {super_admin:'Super admin', admin:'Admin', member:'Utente', viewer:'Visualizzatore'};
-const canWrite = () => profile?.approved && ['super_admin','admin','member'].includes(profile.role);
+const canManage = () => profile?.approved && ['super_admin','admin'].includes(profile.role);
+const canWrite = () => profile?.approved && projectLevel==='edit';
 const canConfigure = () => profile?.approved && profile.role==='super_admin';
 const plan = () => activeDocument?.ship_plan;
 const isOverview = () => plan()?.overview.page === viewer.pageNumber;
-const canPlace = () => canWrite() && (!plan() || plan().decks.some(deck=>deck.page===viewer.pageNumber));
+const canPlace = () => canWrite() && Boolean(plan()?.decks.some(deck=>deck.page===viewer.pageNumber));
 const pageName = n => plan()?.overview.page===n ? 'General Overview' : plan()?.decks.find(deck=>deck.page===n)?.name || tr('Pagina')+' '+n;
+const phoneLayout=matchMedia('(max-width:600px), (orientation:landscape) and (max-height:550px)');
 const filterIds = ['notes-query','notes-page','notes-kind','notes-author','notes-day'];
 let finishPick = null;
 const viewer=new Viewer($('viewport'),$('pdf-canvas'),$('marks-canvas'),{create:a=>makeAnnotation(a).catch(report),edit:a=>openMarker(a).catch(report),error:report});
 const setupViewer=new Viewer($('setup-viewport'),$('setup-pdf'),$('setup-marks'),{error:report});
 let setupPdf,closeSetup,setupLoading=false;
 $('setup-fit').onclick=()=>setupViewer.fit();
-$('setup-back').onclick=()=>{if(!$('setup-save').disabled||setupLoading)showDocuments(project).catch(report);};
+$('setup-back').onclick=()=>{if(!$('setup-save').disabled||setupLoading)showProjectSettings(project).catch(report);};
 
 async function clearShipSetup(){
  closeSetup?.();
@@ -33,9 +35,9 @@ async function clearShipSetup(){
  await doc?.destroy();
 }
 
-async function startShipSetup(doc){
+async function startShipSetup(doc,previousPlan){
  if(!canConfigure()||setupLoading||doc.page_count<2)return;
- resetThumbnails();
+
  setupLoading=true;
  const token=++epoch;
  screen('ship-setup');
@@ -52,15 +54,14 @@ async function startShipSetup(doc){
    doc,pdf:rendered,viewer:setupViewer,controls:$('setup-controls'),sheetLabel:$('setup-sheet'),
    hint:$('setup-hint'),saveButton:$('setup-save'),field,btn,text,report,
    async save(shipPlan){
-    const [updated]=await api.table('sw_documents','id=eq.'+doc.id,{method:'PATCH',body:{ship_plan:shipPlan}});
-    if(!updated)throw Error(tr('Configurazione non salvata.'));
-    await showDocuments(project);
+    await api.rpc('sw_publish_ship_plan',{target:doc.id,previous:previousPlan,configuration:shipPlan});
+    await enterProject(project);
     toast(tr('Piani nave salvati.'));
    }
   });
   $('setup-save').disabled=false;
  }catch(error){
-  if(token===epoch){await showDocuments(project);report(error);}
+  if(token===epoch){await showProjectSettings(project);report(error);}
  }finally{setupLoading=false;}
 }
 try{Object.assign(viewer.settings,JSON.parse(localStorage.getItem('sw.tools')||'{}'));}catch{}
@@ -71,7 +72,7 @@ function toast(message){$('toast').textContent=message;$('toast').hidden=false;c
 function screen(name){screens.forEach(id=>$(id).hidden=id!==name);}
 function status(value){$('sync-state').textContent=value;}
 function date(value){return new Date(value).toLocaleString(locale(),{dateStyle:'short',timeStyle:'short'});}
-function mode(value){viewer.mode=canPlace()&&!finishPick&&viewer.mode!==value?value:null;$('note-tool').classList.toggle('active',viewer.mode==='note');$('highlight-tool').classList.toggle('active',viewer.mode==='highlight');}
+function mode(value){if(phoneLayout.matches)$('mobile-tools').open=false;viewer.mode=canPlace()&&!finishPick&&viewer.mode!==value?value:null;$('note-tool').classList.toggle('active',viewer.mode==='note');$('highlight-tool').classList.toggle('active',viewer.mode==='highlight');}
 function modal(title,onClose=null){if($('dialog').open)throw Error(tr('Chiudi prima la finestra aperta.'));dialogOpen=true;dialogClose=onClose;$('dialog-title').textContent=title;$('dialog-body').replaceChildren();$('dialog-footer').replaceChildren();$('dialog').showModal();return $('dialog-body');}
 async function closeModal(){if(dialogClose&&await dialogClose()===false)return;dialogClose=null;dialogOpen=false;$('dialog').close();queueRefresh();}
 $('dialog-close').onclick=()=>closeModal().catch(report);$('dialog').addEventListener('cancel',e=>{e.preventDefault();closeModal().catch(report);});$('dialog-form').onsubmit=e=>e.preventDefault();
@@ -81,10 +82,10 @@ $('login-tab').onclick=()=>setAuthMode('login');$('signup-tab').onclick=()=>setA
 $('auth-form').onsubmit=async e=>{e.preventDefault();$('auth-submit').disabled=true;$('auth-error').textContent='';try{if(authMode==='signup'){await api.signUp($('email').value.trim(),$('password').value,$('full-name').value.trim());if(!api.getSession()){$('auth-error').textContent=tr('Controlla la tua email per confermare la registrazione. Poi accedi per verificare l’approvazione.');$('password').value='';return;}}else await api.signIn($('email').value.trim(),$('password').value);$('password').value='';await restore();}catch(e){$('auth-error').textContent=tr(e.message);}finally{$('auth-submit').disabled=false;}};
 $('reset-password').onclick=async()=>{const email=$('email').value.trim();if(!email||!$('email').checkValidity()){toast(tr('Inserisci la tua email.'));return;}try{await api.request('/auth/v1/recover?redirect_to='+encodeURIComponent(location.origin+location.pathname),{method:'POST',body:{email},anonymous:true});toast(tr('Se l’account esiste, riceverai il link per reimpostare la password.'));}catch(e){report(e);}};
 async function restore(){if(!api.getSession()){stopRealtime?.();stopRealtime=null;screen('auth');return;}try{user=await api.request('/auth/v1/user');const rows=await api.table('sw_profiles','id=eq.'+user.id+'&select=*');profile=rows[0];stopRealtime?.();stopRealtime=watchChanges(queueRefresh);if(!profile)throw Error(tr('Profilo non disponibile. La configurazione del database deve essere completata.'));if(!profile.approved){screen('waiting');return;}document.querySelectorAll('.user-name').forEach(el=>el.textContent=profile.full_name);applyRole();await showProjects();}catch(e){screen('auth');$('auth-error').textContent=tr(e.message);}}
-async function logout(){cancelPick();if(dialogOpen&&!await tryClose())return;stopRealtime?.();stopRealtime=null;epoch++;resetThumbnails(true);await clearShipSetup();project=null;activeDocument=null;viewer.clear();await pdf?.destroy();pdf=null;await api.signOut();profile=user=null;annotations=[];projects=[];screen('auth');}
+async function logout(){cancelPick();if(dialogOpen&&!await tryClose())return;stopRealtime?.();stopRealtime=null;epoch++;await clearShipSetup();project=null;projectLevel=null;activeDocument=null;viewer.clear();await pdf?.destroy();pdf=null;await api.signOut();profile=user=null;annotations=[];projects=[];screen('auth');}
 async function tryClose(){await closeModal();return !dialogOpen;}
 document.querySelectorAll('.logout').forEach(b=>b.onclick=()=>logout().catch(report));$('check-approval').onclick=()=>restore().catch(report);
-async function showProjects(){epoch++;resetThumbnails(false);await clearShipSetup();project=null;activeDocument=null;viewer.clear();await pdf?.destroy();pdf=null;undo=[];redo=[];screen('projects');$('project-list').replaceChildren(text('div',tr('Caricamento…'),'empty'));projects=await api.table('sw_projects','select=*&order=created_at.desc');renderProjects();}
+async function showProjects(){epoch++;await clearShipSetup();project=null;projectLevel=null;activeDocument=null;viewer.clear();await pdf?.destroy();pdf=null;undo=[];redo=[];screen('projects');$('project-list').replaceChildren(text('div',tr('Caricamento…'),'empty'));projects=await api.table('sw_projects','select=*&order=created_at.desc');renderProjects();}
 function projectPeriod(p){
  if(!p.start_date||!p.end_date)return tr('Periodo da definire');
  const format=value=>new Intl.DateTimeFormat(locale(),{dateStyle:'short',timeZone:'UTC'}).format(new Date(value+'T00:00:00Z'));
@@ -96,7 +97,8 @@ function renderProjects(){
  $('project-count').textContent=list.length+' '+tr(list.length===1?'progetto':'progetti');
  $('project-list').replaceChildren();
  for(const p of list){
-  const card=btn('',()=>showDocuments(p),'project-card');
+  const card=btn('',()=>enterProject(p),'project-card');
+  const tile=text('div','','document-item');
   const cover=text('div','','cover');
   cover.append(text('span',tr('Nessuna copertina')));
   if(p.cover_image){
@@ -106,18 +108,20 @@ function renderProjects(){
    cover.append(image);
   }
   card.append(cover,text('h3',p.title),text('p',projectPeriod(p)));
-  $('project-list').append(card);
+  tile.append(card);
+  if(canManage())tile.append(btn(tr('Gestisci progetto'),()=>showProjectSettings(p)));
+  $('project-list').append(tile);
  }
  if(!list.length)$('project-list').append(text('div',tr('Nessun progetto'),'empty'));
 }
 $('search').oninput=renderProjects;
-$('back-projects').onclick=()=>showDocuments(project).catch(report);
+$('back-projects').onclick=()=>showProjects().catch(report);
 $('documents-back').onclick=()=>showProjects().catch(report);
 $('new-project').onclick=()=>projectEditor();
 $('edit-project').onclick=()=>projectEditor(project);
 
 function projectEditor(existing=null){
- if(!canWrite())return;
+ if(!canManage())return;
  const box=modal(tr(existing?'Modifica progetto':'Nuovo progetto'));
  const title=field(box,tr('Nome progetto'),{value:existing?.title||''});
  title.maxLength=180;
@@ -139,51 +143,136 @@ function projectEditor(existing=null){
    if(!updated)throw Error(tr('Progetto non salvato.'));
    dialogClose=null;
    await closeModal();
-   await showDocuments(updated);
+   await showProjectSettings(updated);
   }finally{submit.disabled=false;dialogClose=null;}
  },'primary');
  $('dialog-footer').append(submit);
 }
-async function showDocuments(p){cancelPick();epoch++;await clearShipSetup();activeDocument=null;viewer.clear();await pdf?.destroy();pdf=null;project=p;undo=[];redo=[];screen('documents');$('documents-title').textContent=p.title;$('document-grid').replaceChildren(text('div',tr('Caricamento…'),'empty'));documents=await api.table('sw_documents','project_id=eq.'+p.id+'&select=*&order=created_at.desc');renderDocuments();}
-function renderDocuments(){
- resetThumbnails();
- const grid=$('document-grid');
- const configured=documents.some(d=>d.ship_plan);
- grid.replaceChildren();
- for(const d of documents){
-  const entry=text('div','','document-item');
-  const card=btn('',()=>openDocument(d),'project-card');
-  const cover=text('div','','cover');
-  cover.append(text('span','PDF','pdf-icon'),text('span',d.page_count+' '+tr(d.page_count===1?'pagina':'pagine')),documentThumbnail(d.file_path));
-  card.append(cover,text('h3',d.title),text('p',d.file_name));
-  entry.append(card);
-  if(d.ship_plan||canConfigure()&&!configured&&d.page_count>1){
-   const actions=text('div','','document-ship');
-   if(d.ship_plan)actions.append(text('strong',tr('Piano nave')));
-   if(canConfigure()&&(d.ship_plan||!configured)&&d.page_count>1){
-    actions.append(btn(tr(d.ship_plan?'Configura piano nave':'Scegli come piano nave'),()=>startShipSetup(d)));
-    if(d.ship_plan)actions.append(btn(tr('Torna a PDF standard'),async()=>{
-     if(!confirm(tr('Rimuovere la configurazione Piani nave da questo PDF?')))return;
-     await api.table('sw_documents','id=eq.'+d.id,{method:'PATCH',body:{ship_plan:null}});
-     await showDocuments(project);
-    }));
-   }
-   entry.append(actions);
-  }
-  grid.append(entry);
- }
- if(!documents.length)grid.append(text('div',tr('Nessun documento'),'empty'));
+async function enterProject(p){
+ const token=++epoch;
+ cancelPick();
+ $('mobile-tools').open=!phoneLayout.matches;
+ await clearShipSetup();
+ const [level,rows]=await Promise.all([
+  api.rpc('sw_project_level',{target:p.id}),
+  api.table('sw_documents','project_id=eq.'+p.id+'&ship_plan=not.is.null&select=*')
+ ]);
+ if(token!==epoch)return;
+ if(!level){await showProjects();throw Error(tr('Accesso al progetto revocato.'));}
+ project=p;projectLevel=level;
+ if(rows[0])return openDocument(rows[0]);
+ if(canManage())return showProjectSettings(p);
+ await showProjects();
+ toast(tr('Piano nave in preparazione.'));
 }
-$('add-document').onclick=()=>{if(!canWrite())return;const box=modal(tr('Aggiungi documento')),title=field(box,tr('Titolo documento')),file=field(box,tr('PDF · massimo 50 MB'),{type:'file'});file.accept='.pdf,application/pdf';file.onchange=()=>{if(!title.value&&file.files[0])title.value=file.files[0].name.replace(/\.pdf$/i,'');};const submit=btn(tr('Importa PDF'),async()=>{const chosen=file.files[0];if(!title.value.trim()||!chosen)throw Error(tr('Inserisci il titolo e scegli un PDF.'));if(chosen.size>50000000)throw Error(tr('Il PDF supera 50 MB.'));submit.disabled=true;dialogClose=()=>false;let path,uploaded=false;try{const doc=await loadPdf(new Uint8Array(await chosen.arrayBuffer()));const count=doc.numPages;await doc.destroy();path=user.id+'/'+crypto.randomUUID()+'.pdf';await api.pdfUpload(path,chosen);uploaded=true;const [d]=await api.table('sw_documents','',{method:'POST',body:{project_id:project.id,title:title.value.trim(),file_name:chosen.name,file_path:path,page_count:count}});uploaded=false;dialogClose=null;await closeModal();await openDocument(d);}catch(e){if(uploaded)try{await api.pdfCleanup(path);}catch{}throw e;}finally{submit.disabled=false;dialogClose=null;}},'primary');$('dialog-footer').append(submit);};
 
-async function openDocument(p){resetThumbnails(false);const token=++epoch;loading=true;activeDocument=p;annotations=[];undo=[];redo=[];viewer.clear();screen('workspace');$('document-title').textContent=p.title;status(tr('Apertura…'));applyPanel();try{const [blob,rows]=await Promise.all([api.pdfDownload(p.file_path),api.table('sw_annotations','document_id=eq.'+p.id+'&select=*&order=created_at.asc')]);if(token!==epoch)return;await pdf?.destroy();pdf=await loadPdf(new Uint8Array(await blob.arrayBuffer()));if(token!==epoch){await pdf.destroy();return;}annotations=rows;await viewer.open(pdf,plan()?.overview.page||1);
+async function showProjectSettings(p){
+ if(!canManage())return showProjects();
+ cancelPick();
+ const token=++epoch;
+ await clearShipSetup();
+ activeDocument=null;
+ project=p;
+ projectLevel=null;
+ viewer.clear();
+ await pdf?.destroy();
+ pdf=null;
+ if(token!==epoch)return;
+ screen('documents');
+ $('documents-title').textContent=p.title;
+ $('project-plan').replaceChildren(text('p',tr('Caricamento…')));
+ const rows=await api.table('sw_documents','project_id=eq.'+p.id+'&select=*&order=created_at.desc');
+ if(token!==epoch)return;
+ const current=rows.find(doc=>doc.ship_plan);
+ const box=$('project-plan');
+ box.replaceChildren(text('h2',tr('Piano nave')),text('p',current?.title||tr('Piano nave in preparazione.')));
+ if(current)box.append(btn(tr('Apri piano nave'),()=>enterProject(p)));
+ if(canConfigure()){
+  if(current)box.append(btn(tr('Configura piano nave'),()=>startShipSetup(current,current.id)));
+  box.append(btn(tr(current?'Sostituisci piano nave':'Carica piano nave'),()=>uploadShipPlan(current?.id||null),'primary'));
+  for(const draft of rows.filter(doc=>!doc.ship_plan&&doc.page_count>1)){
+   box.append(btn(tr('Configura PDF già caricato')+' · '+draft.title,()=>startShipSetup(draft,current?.id||null)));
+  }
+ }
+}
+
+$('project-access').onclick=()=>manageProjectAccess().catch(report);
+async function manageProjectAccess(){
+ if(!canManage()||!project)return;
+ const projectId=project.id;
+ const box=modal(tr('Accessi al progetto'));
+ const [people,access]=await Promise.all([
+  api.table('sw_profiles','approved=eq.true&role=in.(member,viewer)&select=id,full_name&order=full_name'),
+  api.table('sw_project_access','project_id=eq.'+projectId)
+ ]);
+ if(!dialogOpen||!box.isConnected)return;
+ const levels=new Map(access.map(row=>[row.user_id,row.access_level]));
+ if(!people.length)box.append(text('p',tr('Nessun utente approvato da assegnare.')));
+ for(const person of people){
+  const row=text('label',person.full_name,'access-row');
+  const select=document.createElement('select');
+  select.append(...[['','Nessun accesso'],['view','Sola lettura'],['edit','Modifica note']].map(([key,label])=>new Option(tr(label),key)));
+  select.value=levels.get(person.id)||'';
+  select.onchange=async()=>{
+   const previous=levels.get(person.id)||'';
+   const level=select.value;
+   select.disabled=true;
+   try{
+    if(level)await api.table('sw_project_access','on_conflict=project_id,user_id',{
+     method:'POST',body:{project_id:projectId,user_id:person.id,access_level:level},
+     headers:{Prefer:'resolution=merge-duplicates,return=minimal'}
+    });
+    else await api.table('sw_project_access','project_id=eq.'+projectId+'&user_id=eq.'+person.id,{method:'DELETE'});
+    levels.set(person.id,level);
+    toast(tr('Salvato'));
+   }catch(error){select.value=previous;report(error);}
+   finally{select.disabled=false;}
+  };
+  row.append(select);box.append(row);
+ }
+}
+
+function uploadShipPlan(previous){
+ if(!canConfigure())return;
+ const box=modal(tr(previous?'Sostituisci piano nave':'Carica piano nave'));
+ if(previous)box.append(text('p',tr('Le note restano associate alla tavola originale. Il nuovo piano parte senza annotazioni.')));
+ const file=field(box,tr('PDF · massimo 50 MB'),{type:'file'});
+ file.accept='.pdf,application/pdf';
+ const submit=btn(tr('Carica e configura'),async()=>{
+  const chosen=file.files[0];
+  if(!chosen)throw Error(tr('Seleziona un PDF.'));
+  if(chosen.size>50000000)throw Error(tr('Il PDF supera 50 MB.'));
+  submit.disabled=true;dialogClose=()=>false;
+  let path,uploaded=false;
+  try{
+   const parsed=await loadPdf(new Uint8Array(await chosen.arrayBuffer()));
+   const count=parsed.numPages;
+   await parsed.destroy();
+   if(count<2)throw Error(tr('Il piano nave deve contenere almeno due pagine.'));
+   path=user.id+'/'+crypto.randomUUID()+'.pdf';
+   await api.pdfUpload(path,chosen);
+   uploaded=true;
+   const [doc]=await api.table('sw_documents','',{method:'POST',body:{
+    project_id:project.id,title:chosen.name.replace(/\.pdf$/i,'').slice(0,180),
+    file_name:chosen.name,file_path:path,page_count:count
+   }});
+   uploaded=false;dialogClose=null;
+   await closeModal();
+   await startShipSetup(doc,previous);
+  }catch(error){if(uploaded)try{await api.pdfCleanup(path);}catch{}throw error;}
+  finally{submit.disabled=false;dialogClose=null;}
+ },'primary');
+ $('dialog-footer').append(submit);
+}
+
+async function openDocument(p){const token=++epoch;loading=true;activeDocument=p;annotations=[];undo=[];redo=[];viewer.clear();screen('workspace');$('document-title').textContent=p.title;status(tr('Apertura…'));applyPanel();try{const [blob,rows]=await Promise.all([api.pdfDownload(p.file_path),api.table('sw_annotations','document_id=eq.'+p.id+'&select=*&order=created_at.asc')]);if(token!==epoch)return;await pdf?.destroy();pdf=await loadPdf(new Uint8Array(await blob.arrayBuffer()));if(token!==epoch){await pdf.destroy();return;}annotations=rows;await viewer.open(pdf,plan()?.overview.page||1);
 for(const id of filterIds) $(id).value='';
-if(matchMedia('(max-height:550px) and (max-width:1000px) and (orientation:landscape)').matches){panelHidden=true;applyPanel();}
+if(phoneLayout.matches){panelHidden=true;applyPanel();}
 refreshList();status('');}finally{loading=false;}}
 async function page(n){if(finishPick||loading||!pdf||n<1||n>pdf.numPages||n===viewer.pageNumber)return;loading=true;try{mode(null);await viewer.page(n);refreshList();}finally{loading=false;}}
 function applyRole(){
  $('users-button').hidden=profile?.role!=='super_admin';
- $('new-project').hidden=$('add-document').hidden=$('edit-project').hidden=!canWrite();
+ $('new-project').hidden=$('edit-project').hidden=$('project-access').hidden=!canManage();
 }
 
 function selectOptions(select,options){
@@ -240,8 +329,14 @@ $('pick-cancel').onclick=()=>finishPick?.(null);
 function pagePicker(){if(!pdf||loading||finishPick)return;const box=modal(tr('Vai alla pagina')),number=field(box,tr('Pagina')+' / '+pdf.numPages,{type:'number',value:viewer.pageNumber,min:1,max:pdf.numPages,step:1}),range=field(box,'',{type:'range',value:viewer.pageNumber,min:1,max:pdf.numPages,step:1});range.oninput=()=>number.value=range.value;number.oninput=()=>range.value=number.value;$('dialog-footer').append(btn(tr('Vai'),async()=>{const n=Number(number.value);if(!Number.isInteger(n)||n<1||n>pdf.numPages)throw Error(tr('Numero pagina non valido.'));await closeModal();await page(n);},'primary'));}
 for(const [id,delta] of [['prev',-1],['next',1]]){let timer,long=false;$(id).onpointerdown=()=>{long=false;timer=setTimeout(()=>{long=true;pagePicker();},550);};$(id).onpointerup=$(id).onpointerleave=$(id).onpointercancel=()=>clearTimeout(timer);$(id).onclick=()=>{if(!long)advancePage(delta).catch(report);};$(id).oncontextmenu=e=>e.preventDefault();}
 $('page-label').onclick=pagePicker;$('fit').onclick=()=>viewer.fit();$('note-tool').onclick=()=>mode('note');$('highlight-tool').onclick=()=>mode('highlight');
-function applyPanel(){const available=$('workspace-body').clientWidth;const width=clamp(panelWidth,160,Math.max(160,available-180));$('notes-panel').hidden=panelHidden;$('notes-panel').style.width=width+'px';$('workspace-body').style.setProperty('--notes-width',width+'px');$('panel-toggle').setAttribute('aria-expanded',String(!panelHidden));$('panel-toggle').textContent=panelHidden?'◂':'▸';}
-$('panel-toggle').onclick=()=>{panelHidden=!panelHidden;applyPanel();};let resizeStart;
+function applyPanel(){const available=$('workspace-body').clientWidth;const width=clamp(panelWidth,160,Math.max(160,available-180));$('notes-panel').hidden=panelHidden;$('notes-panel').style.width=width+'px';$('workspace-body').style.setProperty('--notes-width',width+'px');$('panel-toggle').setAttribute('aria-expanded',String(!panelHidden));$('mobile-notes').setAttribute('aria-expanded',String(!panelHidden));$('panel-toggle').textContent=panelHidden?'◂':'▸';}
+function toggleNotes(){panelHidden=!panelHidden;applyPanel();}
+$('panel-toggle').onclick=$('mobile-notes').onclick=toggleNotes;
+phoneLayout.addEventListener('change',()=>{panelHidden=phoneLayout.matches;$('mobile-tools').open=!phoneLayout.matches;applyPanel();});
+$('mobile-tools').open=!phoneLayout.matches;
+$('workspace-body').addEventListener('pointerdown',e=>{if(e.target.closest('#viewport'))$('mobile-tools').open=!phoneLayout.matches;});
+$('mobile-tools').addEventListener('click',e=>{if(phoneLayout.matches&&e.target.closest('button'))$('mobile-tools').open=false;});
+let resizeStart;
 $('divider').onpointerdown=e=>{if(e.target===$('panel-toggle')||panelHidden)return;e.preventDefault();$('divider').setPointerCapture(e.pointerId);resizeStart={x:e.clientX,width:$('notes-panel').offsetWidth};};$('divider').onpointermove=e=>{if(resizeStart){panelWidth=clamp(resizeStart.width+resizeStart.x-e.clientX,160,Math.max(160,$('workspace-body').clientWidth-180));applyPanel();}};$('divider').onpointerup=$('divider').onpointercancel=()=>{if(resizeStart)localStorage.setItem('sw.panelWidth',panelWidth);resizeStart=null;};$('divider').onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();panelWidth+=e.key==='ArrowLeft'?15:-15;applyPanel();localStorage.setItem('sw.panelWidth',panelWidth);}};
 window.addEventListener('resize',applyPanel);$('toolbar-toggle').onclick=()=>{$('toolbar').hidden=!$('toolbar').hidden;$('toolbar-toggle').textContent=$('toolbar').hidden?'▾':'▴';};
 function setFilter(value){all=value;localStorage.setItem('sw.all',all);refreshList();}$('filter-page').onclick=()=>setFilter(false);$('filter-all').onclick=()=>setFilter(true);
@@ -358,6 +453,7 @@ async function openAnnotation(initial,before=initial){
  function flush(){
   const values={title:title.value,description:description.value};
   chain=chain.then(async()=>{
+   if(!box.contains(title))return;
    if(values.title===current.title&&values.description===current.description){failed=false;return;}
    status(tr('Salvataggio…'));
    try{current=await patch(current,values);failed=false;status(tr('Salvato'));}
@@ -450,26 +546,45 @@ async function manageUsers(){
   box.append(row);
  }
 }
+function dismissNoteSession(){
+ cancelPick();
+ dialogClose=null;
+ dialogOpen=false;
+ $('dialog').close();
+ $('dialog-body').replaceChildren();
+ $('dialog-footer').replaceChildren();
+}
 function queueRefresh(){clearTimeout(refreshTimer);refreshTimer=setTimeout(syncVisible,180);}
 async function syncVisible(){
- if(polling||loading||dialogOpen||finishPick||document.hidden||!api.getSession()||!user)return;
+ if(polling||loading||setupLoading||document.hidden||!api.getSession()||!user)return;
  polling=true;const token=epoch;
  try{
   const [mine]=await api.table('sw_profiles','id=eq.'+user.id+'&select=*');
   if(token!==epoch)return;
-  const wasApproved=profile?.approved,oldRole=profile?.role;profile=mine;applyRole();
-  if(!mine?.approved){epoch++;resetThumbnails(true);await clearShipSetup();project=null;activeDocument=null;annotations=[];projects=[];documents=[];viewer.clear();await pdf?.destroy();pdf=null;screen('waiting');return;}
+  const wasApproved=profile?.approved;profile=mine;applyRole();
+  if(!mine?.approved){dismissNoteSession();epoch++;await clearShipSetup();project=null;projectLevel=null;activeDocument=null;annotations=[];projects=[];viewer.clear();await pdf?.destroy();pdf=null;screen('waiting');return;}
   if(!wasApproved){await restore();return;}
-  if(!$('ship-setup').hidden&&!canConfigure()){await showDocuments(project);return;}
-  if(!$('projects').hidden){const rows=await api.table('sw_projects','select=*&order=created_at.desc');if(token===epoch){projects=rows;renderProjects();}}
-  else if(!$('documents').hidden&&project){const rows=await api.table('sw_documents','project_id=eq.'+project.id+'&select=*&order=created_at.desc');if(token===epoch&&(JSON.stringify(rows)!==JSON.stringify(documents)||oldRole!==mine.role)){documents=rows;renderDocuments();}}
+  if(activeDocument&&(dialogOpen||finishPick)){
+   const level=await api.rpc('sw_project_level',{target:project.id});
+   if(token!==epoch)return;
+   if(!level){dismissNoteSession();await showProjects();toast(tr('Accesso al progetto revocato.'));return;}
+   if(level!==projectLevel){dismissNoteSession();projectLevel=level;refreshList();}
+   return;
+  }
+  if(dialogOpen||finishPick)return;
+  if((!$('ship-setup').hidden&&!canConfigure())||(!$('documents').hidden&&!canManage())){await showProjects();return;}
+  if(!$('projects').hidden){const rows=await api.table('sw_projects','select=*&order=created_at.desc');if(token===epoch&&!dialogOpen){projects=rows;renderProjects();}}
   else if(activeDocument){
    const id=activeDocument.id;
-   const [[updated],rows]=await Promise.all([
-    api.table('sw_documents','id=eq.'+id+'&select=*'),
+   const [level,[updated],rows]=await Promise.all([
+    api.rpc('sw_project_level',{target:project.id}),
+    api.table('sw_documents','id=eq.'+id+'&ship_plan=not.is.null&select=*'),
     api.table('sw_annotations','document_id=eq.'+id+'&select=*&order=created_at.asc')
    ]);
-   if(token===epoch&&updated&&!dialogOpen&&!finishPick){activeDocument=updated;annotations=rows;refreshList();status(tr('Sincronizzato'));}
+   if(token!==epoch)return;
+   if(!level){await showProjects();toast(tr('Accesso al progetto revocato.'));return;}
+   if(!updated){await enterProject(project);return;}
+   if(!dialogOpen&&!finishPick){projectLevel=level;activeDocument=updated;annotations=rows;refreshList();status(tr('Sincronizzato'));}
   }
  }catch(e){status(tr('Riconnessione…'));}finally{polling=false;}
 }
@@ -485,7 +600,7 @@ $('language').onchange=()=>{
  translateStatic();
  if(!$('auth').hidden&&!dialogOpen)setAuthMode(authMode);
  if(!$('projects').hidden)renderProjects();
- if(!$('documents').hidden)renderDocuments();
+ if(!$('documents').hidden)showProjectSettings(project).catch(report);
  if(!$('workspace').hidden){refreshList();status('');}
 };
 window.addEventListener('beforeunload',e=>{if(dialogOpen){e.preventDefault();e.returnValue='';}});
