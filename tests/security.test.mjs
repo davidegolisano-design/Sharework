@@ -110,5 +110,12 @@ test('Database permissions, approval, authorship, numbering and private files',a
  assert.equal((await db.query('select count(*)::int as count from sw_documents where project_id=$1 and ship_plan is not null',[p.id])).rows[0].count,1);
  await db.exec('reset role');
  assert.equal((await db.query('select count(*)::int as count from sw_annotations where id=$1',[marker.id])).rows[0].count,1);
+ await db.exec(await readFile('supabase/008_admin_annotation_access.sql','utf8'));
+ await as(a);
+ assert.equal((await db.query('select sw_project_level($1) as level',[p.id])).rows[0].level,'edit');
+ await db.query("insert into sw_annotations(project_id,document_id,page,kind) values($1,$2,2,'highlight')",[p.id,doc2.id]);
+ await assert.rejects(db.query('select sw_publish_ship_plan($1,$1,$2)',[doc2.id,shipPlan]));
+ await as(admin);
+ assert.equal((await db.query('select sw_project_level($1) as level',[p.id])).rows[0].level,'edit');
  await db.close();
 });

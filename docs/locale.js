@@ -1,4 +1,6 @@
 const english = {
+ "Mostra note":"Show notes",
+ "Ponte attuale":"Current deck",
  "Piani nave condivisi": "Shared ship plans",
  "Consulta i ponti e ritrova le annotazioni sulla tavola. L’accesso e le modifiche dipendono dai permessi del progetto.": "Browse decks and locate annotations on the drawing. Project permissions control who can view and edit.",
  "IMPOSTAZIONI PROGETTO": "PROJECT SETTINGS",

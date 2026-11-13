@@ -1,6 +1,6 @@
 # Sharework
 
-Web app per progetti PDF condivisi, con registrazione, accesso e approvazione del super admin. Admin e Super admin vedono tutti i progetti. Gli altri account vedono i progetti assegnati, con livello di sola lettura o modifica delle annotazioni per ciascun progetto. Nessun documento è accessibile senza autenticazione e approvazione.
+Web app per progetti PDF condivisi, con registrazione, accesso e approvazione del super admin. Admin e Super admin vedono tutti i progetti. Entrambi possono modificare le annotazioni. Gli altri account vedono i progetti assegnati, con livello di sola lettura o modifica delle annotazioni per ciascun progetto. Nessun documento è accessibile senza autenticazione e approvazione.
 
 ## Funzioni
 
@@ -39,7 +39,7 @@ L'anteprima usa `http://127.0.0.1:4173`. `dist` è il sito statico da pubblicare
 6. In `002_first_admin.sql` sostituire il segnaposto con l'email dell'amministratore e eseguirlo nel SQL Editor. Il controllo richiede email confermata. Non pubblicare una versione compilata con credenziali amministrative.
 7. Eseguire `supabase/005_ship_plans_roles.sql` una volta. Gli amministratori già approvati diventano super admin. Per una nuova installazione completare il passaggio 6 prima di questa migrazione.
 8. Eseguire `supabase/006_project_cards_ship_setup.sql`.
-9. Eseguire `supabase/007_project_access.sql`. Le assegnazioni iniziano vuote.
+9. Eseguire `supabase/007_project_access.sql` e `supabase/008_admin_annotation_access.sql`. Le assegnazioni iniziano vuote.
 10. Il super admin abilita i nuovi utenti e ne assegna il ruolo dalla pagina Utenti.
 
 `src/config.js` contiene l'URL e la sola chiave pubblica/publishable, utilizzabile nel browser. Non inserire `service_role`, secret key o password nel repository. Tutte le autorizzazioni sono applicate anche nel database e nello Storage; il nome autore non dipende dal contenuto inviato dal browser.
@@ -66,7 +66,7 @@ Il sito pubblico mostra solo l'accesso. I PDF non si trovano nel repository o ne
 
 `pnpm test` esegue veri test SQL su PostgreSQL locale tramite PGlite, con ruoli e Row Level Security: accesso negato ai non approvati, impossibilità di auto-approvazione, identità autore non falsificabile, numerazione, controllo versione e file privati. PGlite simula le tabelle Auth/Storage necessarie; non sostituisce il collaudo dei servizi Auth/Storage sul progetto Supabase reale.
 
-Prima di pubblicare questa release web, applicare le migrazioni fino a `007_project_access.sql`. Ogni progetto può avere un Piano nave. Prima dell'uso operativo collaudare con due account: registrazione/conferma, approvazione, importazione PDF, modifiche concorrenti, revoca accesso e recupero password. Il primo amministratore deve usare un indirizzo di cui controlla la casella.
+Prima di pubblicare questa release web, applicare le migrazioni fino a `008_admin_annotation_access.sql`. Ogni progetto può avere un Piano nave. Prima dell'uso operativo collaudare con due account: registrazione/conferma, approvazione, importazione PDF, modifiche concorrenti, revoca accesso e recupero password. Il primo amministratore deve usare un indirizzo di cui controlla la casella.
 
 La versione web richiede Internet; non importa automaticamente i progetti locali dell'APK. Le annotazioni restano separate dal PDF originale. L'autore indica l'account e il nome dichiarato alla registrazione, non una firma digitale. Una revoca blocca le letture successive, ma non può ritirare copie di file già scaricate. Il piano Free non include backup automatici: predisporre copie periodiche di database e file prima dell'uso operativo.
 
