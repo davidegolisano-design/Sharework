@@ -1,0 +1,28 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';import {PGlite} from '@electric-sql/pglite';
+test('Database permissions, approval, authorship, numbering and private files',async()=>{
+ const db=new PGlite();await db.exec(`create role anon;create role authenticated;create schema auth;create schema storage;create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth,public,storage to authenticated,anon;grant execute on function auth.uid() to authenticated,anon;create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);create table storage.objects(id uuid default gen_random_uuid(),bucket_id text,name text);alter table storage.objects enable row level security;grant select,insert,delete on storage.objects to authenticated;create function storage.foldername(text) returns text[] language sql immutable as $$ select string_to_array($1,'/') $$;`);
+ await db.exec(await readFile('supabase/001_sharework.sql','utf8'));
+ const admin='00000000-0000-0000-0000-000000000001',a='00000000-0000-0000-0000-000000000002',b='00000000-0000-0000-0000-000000000003',pending='00000000-0000-0000-0000-000000000004';
+ for(const [id,name,email]of [[admin,'Amministratore Test','admin@example.test'],[a,'Mario Rossi','mario@example.test'],[b,'Anna Verdi','anna@example.test'],[pending,'Ospite','guest@example.test']])await db.query(`insert into auth.users values($1,$2,now(),$3)`,[id,email,JSON.stringify({full_name:name,approved:true,role:'admin'})]);
+ await db.exec((await readFile('supabase/002_first_admin.sql','utf8')).replace('replace-with-admin-email@example.com','admin@example.test'));
+ async function as(id){await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id||'']);await db.exec('set role '+(id?'authenticated':'anon'));}
+ await as(admin);await db.query('select public.sw_set_approval($1,true)',[a]);await db.query('select public.sw_set_approval($1,true)',[b]);
+ await as(a);const [p]=(await db.query(`insert into sw_projects(title,file_path,file_name,page_count,created_by) values('Docking',$1,'GA.pdf',10,$2) returning *`,[a+'/test.pdf',admin])).rows;assert.equal(p.created_by,a);
+ await db.query(`insert into storage.objects(bucket_id,name) values('sharework-pdfs',$1)`,[a+'/test.pdf']);
+ const [note]=(await db.query(`insert into sw_annotations(project_id,page,kind,created_by,author_name) values($1,2,'note',$2,'Falso autore') returning *`,[p.id,admin])).rows;
+ assert.equal(note.created_by,a);assert.equal(note.author_name,'Mario Rossi');assert.equal(note.number,1);
+ await as(b);assert.equal((await db.query('select * from sw_projects')).rows.length,1);assert.equal((await db.query('select * from storage.objects')).rows.length,1);
+ const updated=(await db.query(`update sw_annotations set description='Controllato' where id=$1 returning *`,[note.id])).rows[0];assert.equal(updated.author_name,'Mario Rossi');assert.equal(updated.updated_by,b);assert.equal(updated.version,2);
+ await assert.rejects(db.query(`update sw_annotations set author_name='Anna' where id=$1`,[note.id]));
+ await assert.rejects(db.query(`update sw_profiles set approved=true where id=$1`,[pending]));
+ await assert.rejects(db.query(`update sw_annotations set points='[[2,0]]' where id=$1`,[note.id]));
+ assert.equal((await db.query(`update sw_annotations set title='stale' where id=$1 and version=1 returning id`,[note.id])).rows.length,0);
+ const second=(await db.query(`insert into sw_annotations(project_id,page,kind) values($1,4,'note') returning *`,[p.id])).rows[0];assert.equal(second.number,2);assert.equal(second.author_name,'Anna Verdi');
+ await as(pending);assert.equal((await db.query('select * from sw_projects')).rows.length,0);assert.equal((await db.query('select * from sw_annotations')).rows.length,0);assert.equal((await db.query('select * from storage.objects')).rows.length,0);
+ assert.equal((await db.query('select * from sw_profiles')).rows[0].approved,false);
+ await assert.rejects(db.query('select public.sw_set_approval($1,true)',[pending]));
+ await assert.rejects(db.query(`insert into storage.objects(bucket_id,name) values('sharework-pdfs',$1)`,[pending+'/secret.pdf']));
+ await as(null);await assert.rejects(db.query('select * from sw_annotations'));
+ await as(admin);await db.query('select public.sw_set_approval($1,false)',[b]);await as(b);assert.equal((await db.query('select * from sw_projects')).rows.length,0);
+ await db.close();
+});
