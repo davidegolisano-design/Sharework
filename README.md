@@ -12,7 +12,8 @@ Web app per progetti PDF condivisi, con registrazione, accesso e approvazione de
 - Zoom con rendering della zona visibile, pannelli riducibili e ridimensionabili.
 - Filtro Pagina/Tutte con separatori; selettore rapido delle pagine.
 - Annulla/Ripeti e controllo versione per rilevare modifiche concorrenti.
-- Aggiornamento annotazioni condivise ogni 10 secondi (non durante l'editing).
+- Aggiornamenti tramite Supabase Realtime di progetti, documenti, annotazioni e approvazioni. Recupero periodico ogni 10 secondi in caso di eventi persi. Durante una finestra di modifica gli aggiornamenti vengono rimandati alla chiusura per proteggere il testo in lavorazione.
+- PWA installabile da Edge/Chrome su PC, con finestra autonoma. Richiede Internet.
 - Area amministratore per approvare e disabilitare utenti.
 
 ## Avvio
@@ -40,9 +41,13 @@ L'anteprima usa `http://127.0.0.1:4173`. `dist` è il sito statico da pubblicare
 
 `src/config.js` contiene l'URL e la sola chiave pubblica/publishable, utilizzabile nel browser. Non inserire `service_role`, secret key o password nel repository. Tutte le autorizzazioni sono applicate anche nel database e nello Storage; il nome autore non dipende dal contenuto inviato dal browser.
 
-## Pubblicazione Cloudflare Pages
+## Pubblicazione GitHub Pages
 
-Collegare questo repository a un progetto Pages, scegliere ramo `main`, comando di build `pnpm install --frozen-lockfile && pnpm build`, directory di output `dist`, Node 22+. In alternativa caricare il contenuto della cartella `dist` come sito statico. Gli header di sicurezza sono in `src/_headers` e vengono copiati nella build.
+Sito: https://davidegolisano-design.github.io/Sharework/
+
+Eseguire `node scripts/prepare-pages.mjs`, poi includere `docs/` nel commit. Pages pubblica il ramo `main`, cartella `/docs`. La CSP è inclusa anche nel documento HTML, perché GitHub Pages non usa `_headers`. La PWA usa percorsi relativi e non contiene servizi ChatGPT. Codice e hosting sono su GitHub; autenticazione, dati e file su Supabase. Eseguire anche `supabase/004_realtime.sql` per attivare le notifiche, mantenendo le policy RLS esistenti.
+
+Per installare: aprire il sito in Edge/Chrome e premere **Installa app**. Se il browser non mostra la richiesta, usare la funzione di installazione dal suo menu. Condividere il link, non il manifest da solo. La PWA memorizza soltanto una pagina generica di assenza connessione nella cache del service worker; non offre modifiche offline.
 
 Il sito pubblico mostra solo l'accesso. I PDF non si trovano nel repository o nella cartella pubblicata: sono nel bucket privato `sharework-pdfs`. Dopo il login vengono scaricati con il token dell'utente, senza URL pubblici permanenti.
 
