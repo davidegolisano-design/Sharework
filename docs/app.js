@@ -4,7 +4,7 @@ import {watchChanges} from './realtime.js';
 import * as api from './api.js';
 import {Viewer,loadPdf,marker} from './viewer.js';
 import {snapshot,grouped,clamp} from './model.js';
-import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols} from './ship-model.js';
+import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView} from './ship-model.js';
 import {editShipPlan} from './ship-editor.js';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
 let stopRealtime=null,refreshTimer;
@@ -21,6 +21,7 @@ const pageName = n => plan()?.overview.page===n ? 'General Overview' : plan()?.d
 const phoneLayout=matchMedia('(max-width:600px), (orientation:landscape) and (max-height:550px)');
 const filterIds = ['notes-query','notes-page','notes-kind','notes-author','notes-day'];
 let finishPick = null;
+let lastDeckView = null;
 const viewer=new Viewer($('viewport'),$('pdf-canvas'),$('marks-canvas'),{create:a=>makeAnnotation(a).catch(report),edit:a=>openMarker(a).catch(report),error:report});
 const setupViewer=new Viewer($('setup-viewport'),$('setup-pdf'),$('setup-marks'),{error:report});
 let setupPdf,closeSetup,setupLoading=false;
@@ -264,11 +265,43 @@ function uploadShipPlan(previous){
  $('dialog-footer').append(submit);
 }
 
-async function openDocument(p){const token=++epoch;loading=true;activeDocument=p;annotations=[];undo=[];redo=[];viewer.clear();screen('workspace');$('document-title').textContent=p.title;status(tr('Apertura…'));applyPanel();try{const [blob,rows]=await Promise.all([api.pdfDownload(p.file_path),api.table('sw_annotations','document_id=eq.'+p.id+'&select=*&order=created_at.asc')]);if(token!==epoch)return;await pdf?.destroy();pdf=await loadPdf(new Uint8Array(await blob.arrayBuffer()));if(token!==epoch){await pdf.destroy();return;}annotations=rows;await viewer.open(pdf,plan()?.overview.page||1);
+async function openDocument(p){lastDeckView=null;const token=++epoch;loading=true;activeDocument=p;annotations=[];undo=[];redo=[];viewer.clear();screen('workspace');$('document-title').textContent=p.title;status(tr('Apertura…'));applyPanel();try{const [blob,rows]=await Promise.all([api.pdfDownload(p.file_path),api.table('sw_annotations','document_id=eq.'+p.id+'&select=*&order=created_at.asc')]);if(token!==epoch)return;await pdf?.destroy();pdf=await loadPdf(new Uint8Array(await blob.arrayBuffer()));if(token!==epoch){await pdf.destroy();return;}annotations=rows;await viewer.open(pdf,plan()?.overview.page||1);
 for(const id of filterIds) $(id).value='';
 if(phoneLayout.matches){panelHidden=true;applyPanel();}
+if(isOverview())viewer.centerView(.5,.5,{visibleWidth:visiblePlanWidth(),fitHeight:true});
 refreshList();status('');}finally{loading=false;}}
-async function page(n){if(finishPick||loading||!pdf||n<1||n>pdf.numPages||n===viewer.pageNumber)return;loading=true;try{mode(null);await viewer.page(n);refreshList();}finally{loading=false;}}
+function visiblePlanWidth(){
+ const viewport=$('viewport').getBoundingClientRect();
+ const panel=$('notes-panel').getBoundingClientRect();
+ return Math.max(1,$('notes-panel').hidden?viewport.width:Math.min(viewport.width,panel.left-viewport.left));
+}
+
+async function page(n,{keepPosition=false}={}){
+ if(finishPick||loading||!pdf||n<1||n>pdf.numPages||n===viewer.pageNumber)return;
+ loading=true;
+ try{
+  const ship=plan();
+  const overview=ship?.overview;
+  const sheets=ship?[overview,...ship.decks]:[];
+  const source=sheets.find(sheet=>sheet.page===viewer.pageNumber);
+  const target=sheets.find(sheet=>sheet.page===n);
+  const view=keepPosition&&source&&target?viewer.viewCenter(visiblePlanWidth()):null;
+  const mapped=view?mapDeckView(source,target,view):null;
+  if(mapped&&source!==overview)lastDeckView={y:view.y,pixelsPerMeter:mapped.pixelsPerMeter};
+  mode(null);
+  await viewer.page(n);
+  if(viewer.pageNumber!==n)return;
+  const visibleWidth=visiblePlanWidth();
+  if(target&&target===overview){
+   viewer.centerView(mapped?clamp(mapped.x,0,1):.5,.5,{visibleWidth,fitHeight:true});
+  }else if(mapped){
+   const deckView=lastDeckView;
+   const width=deckView?deckView.pixelsPerMeter/Math.abs(longitudinalScale(target)):undefined;
+   viewer.centerView(clamp(mapped.x,0,1),clamp(deckView?.y??.5,0,1),{visibleWidth,width});
+  }
+  refreshList();
+ }finally{loading=false;}
+}
 function applyRole(){
  $('users-button').hidden=profile?.role!=='super_admin';
  $('new-project').hidden=$('edit-project').hidden=$('project-access').hidden=!canManage();
@@ -297,7 +330,7 @@ function updatePages(){
   $('ship-pages').value=current;
  }
 }
-$('ship-pages').onchange=()=>page(Number($('ship-pages').value)).catch(report);
+$('ship-pages').onchange=()=>page(Number($('ship-pages').value),{keepPosition:true}).catch(report).finally(()=>{$('ship-pages').value=viewer.pageNumber;});
 
 function cancelPick(){
  finishPick=null;
@@ -321,7 +354,12 @@ async function pickNotePoint(target,label,onPick){
  updatePages();
 }
 $('pick-cancel').onclick=()=>finishPick?.(null);
-$('fit').onclick=()=>viewer.fit();$('note-tool').onclick=()=>mode('note');$('highlight-tool').onclick=()=>mode('highlight');
+$('fit').onclick=()=>{
+ if(!isOverview()){viewer.fit();return;}
+ const visibleWidth=visiblePlanWidth();
+ const view=viewer.viewCenter(visibleWidth);
+ viewer.centerView(clamp(view?.x??.5,0,1),.5,{visibleWidth,fitHeight:true});
+};$('note-tool').onclick=()=>mode('note');$('highlight-tool').onclick=()=>mode('highlight');
 function applyPanel(){const available=$('workspace-body').clientWidth;const width=clamp(panelWidth,160,Math.max(160,available-180));$('notes-panel').hidden=panelHidden;$('notes-panel').style.width=width+'px';$('workspace-body').style.setProperty('--notes-width',width+'px');$('panel-toggle').setAttribute('aria-expanded',String(!panelHidden));$('mobile-notes').setAttribute('aria-expanded',String(!panelHidden));$('panel-toggle').textContent=panelHidden?'◂':'▸';}
 function toggleNotes(){panelHidden=!panelHidden;applyPanel();}
 $('panel-toggle').onclick=$('mobile-notes').onclick=toggleNotes;
@@ -409,12 +447,9 @@ async function goToNote(note){
  if(dialogOpen||finishPick||loading)return;
  await page(note.page);
  if(viewer.pageNumber!==note.page)return;
- const viewport=$('viewport').getBoundingClientRect();
- const panel=$('notes-panel').getBoundingClientRect();
- const visible=$('notes-panel').hidden?viewport.width:Math.min(viewport.width,panel.left-viewport.left);
  const points=note.kind==='highlight'?note.points:null;
  const target=points?.length?points[Math.floor(points.length/2)]:[note.x,note.y];
- viewer.focus(...target,Math.max(visible,1));
+ viewer.focus(...target,visiblePlanWidth());
 }
 async function openAnnotation(initial,before=initial){
  if(dialogOpen||finishPick)return;

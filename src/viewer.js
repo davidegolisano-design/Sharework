@@ -45,19 +45,38 @@ export class Viewer{
  local(e){const r=this.container.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};}
  async open(pdf,page=1){this.clear();this.pdf=pdf;await this.page(page);}
  clear(){this.pageRequest=(this.pageRequest||0)+1;this.revision++;clearTimeout(this.timer);this.task?.cancel();this.pdf=null;this.pdfPage=null;this.detail=null;this.marks=[];this.pick=null;this.guides=[];this.mode=null;this.stroke=null;this.pointers.clear();this.draw();}
- async page(n){if(!this.pdf)return;const request=this.pageRequest=(this.pageRequest||0)+1;this.revision++;this.task?.cancel();clearTimeout(this.timer);const p=await this.pdf.getPage(n);if(request!==this.pageRequest)return;this.task?.cancel();this.pdfPage=p;this.pageNumber=n;this.zoom=1;this.panX=this.panY=0;this.detail=null;this.draw();}
+ async page(n){if(!this.pdf)return;const request=this.pageRequest=(this.pageRequest||0)+1;this.revision++;this.task?.cancel();clearTimeout(this.timer);const p=await this.pdf.getPage(n);if(request!==this.pageRequest)return;this.task?.cancel();this.pdfPage=p;this.pageNumber=n;this.zoom=1;this.minZoom=1;this.panX=this.panY=0;this.detail=null;this.draw();}
  rect(){if(!this.pdfPage)return null;const v=this.pdfPage.getViewport({scale:1}),w=this.container.clientWidth,h=this.container.clientHeight;const scale=Math.max(.0001,Math.min((w-24)/v.width,(h-24)/v.height))*this.zoom;return {x:(w-v.width*scale)/2+this.panX,y:(h-v.height*scale)/2+this.panY,w:v.width*scale,h:v.height*scale,scale};}
- focus(x,y,visibleWidth=this.container.clientWidth){
+ viewCenter(visibleWidth=this.container.clientWidth){
+  const rect=this.rect();
+  if(!rect)return null;
+  return {
+   x:(visibleWidth/2-rect.x)/rect.w,
+   y:(this.container.clientHeight/2-rect.y)/rect.h,
+   width:rect.w
+  };
+ }
+ centerView(x,y,{visibleWidth=this.container.clientWidth,width,fitHeight=false}={}){
   if(!this.pdfPage)return;
-  this.zoom=Math.max(this.zoom,5);
+  const baseWidth=this.rect().w/this.zoom;
+  if(fitHeight){
+   const page=this.pdfPage.getViewport({scale:1});
+   width=Math.max(1,this.container.clientHeight-24)*page.width/page.height;
+  }
+  if(Number.isFinite(width)&&width>0){this.zoom=width/baseWidth;this.minZoom=Math.min(1,this.zoom);}
   this.panX=this.panY=0;
   const rect=this.rect();
   this.panX=visibleWidth/2-(rect.x+x*rect.w);
   this.panY=this.container.clientHeight/2-(rect.y+y*rect.h);
   this.draw();
  }
- fit(){this.zoom=1;this.panX=this.panY=0;this.draw();}
- zoomAt(f,x,y){const r=this.rect();if(!r)return;const next=Math.max(1,this.zoom*f);if(!Number.isFinite(next))return;const ratio=next/this.zoom;this.panX=(this.panX+this.container.clientWidth/2-x)*ratio+x-this.container.clientWidth/2;this.panY=(this.panY+this.container.clientHeight/2-y)*ratio+y-this.container.clientHeight/2;this.zoom=next;this.draw();}
+ focus(x,y,visibleWidth=this.container.clientWidth){
+  if(!this.pdfPage)return;
+  this.zoom=Math.max(this.zoom,5);
+  this.centerView(x,y,{visibleWidth});
+ }
+ fit(){this.zoom=1;this.minZoom=1;this.panX=this.panY=0;this.draw();}
+ zoomAt(f,x,y){const r=this.rect();if(!r)return;const next=Math.max(this.minZoom??1,this.zoom*f);if(!Number.isFinite(next))return;const ratio=next/this.zoom;this.panX=(this.panX+this.container.clientWidth/2-x)*ratio+x-this.container.clientWidth/2;this.panY=(this.panY+this.container.clientHeight/2-y)*ratio+y-this.container.clientHeight/2;this.zoom=next;this.draw();}
  setMarks(marks){this.marks=marks;this.draw(false);}
  draw(render=true){const w=this.container.clientWidth,h=this.container.clientHeight;if(!w||!h)return;this.ratio=Math.min(devicePixelRatio||1,Math.sqrt(10000000/(w*h)));for(const c of [this.canvas,this.overlay]){if(c.width!==Math.round(w*this.ratio)||c.height!==Math.round(h*this.ratio)){c.width=Math.round(w*this.ratio);c.height=Math.round(h*this.ratio);}}
  const ctx=this.canvas.getContext('2d');ctx.setTransform(this.ratio,0,0,this.ratio,0,0);ctx.clearRect(0,0,w,h);const ov=this.overlay.getContext('2d');ov.setTransform(this.ratio,0,0,this.ratio,0,0);ov.clearRect(0,0,w,h);const r=this.rect();if(!r)return;ctx.fillStyle='white';ctx.fillRect(r.x,r.y,r.w,r.h);if(this.detail){const d=this.detail,k=r.scale/d.rect.scale;ctx.drawImage(d.canvas,(r.x-d.rect.x*k),(r.y-d.rect.y*k),d.w*k,d.h*k);}
