@@ -73,3 +73,6 @@ body:has(#ship-setup:not([hidden])) #language-control{display:none}
 #setup-controls .selected{border-color:#087e80;background:#d8f5f2}
 .symbol-picker .selected{border-color:#087e80;background:#d8f5f2}
 #language-control select{cursor:pointer}
+
+.note-reading-title,.note-reading-description{overflow-wrap:anywhere}
+.note-reading-description{white-space:pre-wrap;line-height:1.5}
