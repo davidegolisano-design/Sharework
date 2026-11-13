@@ -100,13 +100,12 @@ function renderProjects(){
   const card=btn('',()=>enterProject(p),'project-card');
   const tile=text('div','','document-item');
   const cover=text('div','','cover');
-  cover.append(text('span',tr('Nessuna copertina')));
   if(p.cover_image){
    const image=new Image();
    image.alt='';
    image.src=p.cover_image;
    cover.append(image);
-  }
+  }else cover.append(text('span',tr('Nessuna copertina')));
   card.append(cover,text('h3',p.title),text('p',projectPeriod(p)));
   tile.append(card);
   if(canManage())tile.append(btn(tr('Gestisci progetto'),()=>showProjectSettings(p)));
@@ -284,8 +283,8 @@ function selectOptions(select,options){
 
 function updatePages(){
  const current=viewer.pageNumber;
- $('page-label').textContent=current+' / '+(pdf?.numPages||1);
  const writable=canWrite();
+ $('mobile-tools').hidden=!writable;
  for(const el of document.querySelectorAll('#toolbar .tool-group,#undo,#redo'))el.hidden=!writable;
  $('undo').disabled=!writable||!!finishPick||!undo.length;
  $('redo').disabled=!writable||!!finishPick||!redo.length;
@@ -294,13 +293,9 @@ function updatePages(){
  $('ship-pages').hidden=!plan();
  $('ship-pages').disabled=!!finishPick;
  if(plan()){
-  selectOptions($('ship-pages'),shipPageOrder(plan(),pdf.numPages).map(n=>[n,pageName(n)]));
+  selectOptions($('ship-pages'),[plan().overview.page,...plan().decks.map(deck=>deck.page)].map(n=>[n,pageName(n)]));
   $('ship-pages').value=current;
  }
-}
-function advancePage(delta){
- const order=shipPageOrder(plan(),pdf?.numPages||0);
- return page(order[order.indexOf(viewer.pageNumber)+delta]||0);
 }
 $('ship-pages').onchange=()=>page(Number($('ship-pages').value)).catch(report);
 
@@ -326,9 +321,7 @@ async function pickNotePoint(target,label,onPick){
  updatePages();
 }
 $('pick-cancel').onclick=()=>finishPick?.(null);
-function pagePicker(){if(!pdf||loading||finishPick)return;const box=modal(tr('Vai alla pagina')),number=field(box,tr('Pagina')+' / '+pdf.numPages,{type:'number',value:viewer.pageNumber,min:1,max:pdf.numPages,step:1}),range=field(box,'',{type:'range',value:viewer.pageNumber,min:1,max:pdf.numPages,step:1});range.oninput=()=>number.value=range.value;number.oninput=()=>range.value=number.value;$('dialog-footer').append(btn(tr('Vai'),async()=>{const n=Number(number.value);if(!Number.isInteger(n)||n<1||n>pdf.numPages)throw Error(tr('Numero pagina non valido.'));await closeModal();await page(n);},'primary'));}
-for(const [id,delta] of [['prev',-1],['next',1]]){let timer,long=false;$(id).onpointerdown=()=>{long=false;timer=setTimeout(()=>{long=true;pagePicker();},550);};$(id).onpointerup=$(id).onpointerleave=$(id).onpointercancel=()=>clearTimeout(timer);$(id).onclick=()=>{if(!long)advancePage(delta).catch(report);};$(id).oncontextmenu=e=>e.preventDefault();}
-$('page-label').onclick=pagePicker;$('fit').onclick=()=>viewer.fit();$('note-tool').onclick=()=>mode('note');$('highlight-tool').onclick=()=>mode('highlight');
+$('fit').onclick=()=>viewer.fit();$('note-tool').onclick=()=>mode('note');$('highlight-tool').onclick=()=>mode('highlight');
 function applyPanel(){const available=$('workspace-body').clientWidth;const width=clamp(panelWidth,160,Math.max(160,available-180));$('notes-panel').hidden=panelHidden;$('notes-panel').style.width=width+'px';$('workspace-body').style.setProperty('--notes-width',width+'px');$('panel-toggle').setAttribute('aria-expanded',String(!panelHidden));$('mobile-notes').setAttribute('aria-expanded',String(!panelHidden));$('panel-toggle').textContent=panelHidden?'◂':'▸';}
 function toggleNotes(){panelHidden=!panelHidden;applyPanel();}
 $('panel-toggle').onclick=$('mobile-notes').onclick=toggleNotes;
@@ -339,10 +332,15 @@ $('mobile-tools').addEventListener('click',e=>{if(phoneLayout.matches&&e.target.
 let resizeStart;
 $('divider').onpointerdown=e=>{if(e.target===$('panel-toggle')||panelHidden)return;e.preventDefault();$('divider').setPointerCapture(e.pointerId);resizeStart={x:e.clientX,width:$('notes-panel').offsetWidth};};$('divider').onpointermove=e=>{if(resizeStart){panelWidth=clamp(resizeStart.width+resizeStart.x-e.clientX,160,Math.max(160,$('workspace-body').clientWidth-180));applyPanel();}};$('divider').onpointerup=$('divider').onpointercancel=()=>{if(resizeStart)localStorage.setItem('sw.panelWidth',panelWidth);resizeStart=null;};$('divider').onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();panelWidth+=e.key==='ArrowLeft'?15:-15;applyPanel();localStorage.setItem('sw.panelWidth',panelWidth);}};
 window.addEventListener('resize',applyPanel);$('toolbar-toggle').onclick=()=>{$('toolbar').hidden=!$('toolbar').hidden;$('toolbar-toggle').textContent=$('toolbar').hidden?'▾':'▴';};
-function setFilter(value){all=value;localStorage.setItem('sw.all',all);refreshList();}$('filter-page').onclick=()=>setFilter(false);$('filter-all').onclick=()=>setFilter(true);
+$('notes-scope').onchange=()=>{
+ all=$('notes-scope').value==='all';
+ localStorage.setItem('sw.all',all);
+ refreshList();
+};
 function badge(a){const c=document.createElement('canvas');c.className='badge';c.width=c.height=70;const ctx=c.getContext('2d');ctx.scale(2,2);if(a.kind==='note')marker(ctx,17.5,17.5,a.color,a.shape,a.number,12);else{ctx.strokeStyle=a.color;ctx.globalAlpha=a.opacity/100;ctx.lineWidth=10;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(6,17);ctx.lineTo(29,17);ctx.stroke();}return c;}
 for(const id of filterIds) $(id).oninput=refreshList;
 $('notes-reset').onclick=()=>{
+ all=false;localStorage.setItem('sw.all',all);
  for(const id of filterIds) $(id).value='';
  refreshList();
 };
@@ -366,9 +364,8 @@ function refreshList(){
   ? grouped(filtered.filter(a=>projectedIds.has(a.id)||a.page===viewer.pageNumber),viewer.pageNumber,true)
   : grouped(filtered,viewer.pageNumber,showAll);
  if(plan())list.sort((a,b)=>order.indexOf(a.page)-order.indexOf(b.page));
- $('filter-page').textContent=overview?'Overview':tr('Pagina');
- $('filter-page').classList.toggle('selected',!showAll);
- $('filter-all').classList.toggle('selected',showAll);
+ selectOptions($('notes-scope'),[['current',tr(overview?'Overview':'Ponte attuale')],['all',tr('Tutte')]]);
+ $('notes-scope').value=all?'all':'current';
  $('notes-list').replaceChildren();
  let previous=-1;
  for(const a of list){

@@ -49,7 +49,7 @@ export class Viewer{
  rect(){if(!this.pdfPage)return null;const v=this.pdfPage.getViewport({scale:1}),w=this.container.clientWidth,h=this.container.clientHeight;const scale=Math.max(.0001,Math.min((w-24)/v.width,(h-24)/v.height))*this.zoom;return {x:(w-v.width*scale)/2+this.panX,y:(h-v.height*scale)/2+this.panY,w:v.width*scale,h:v.height*scale,scale};}
  focus(x,y,visibleWidth=this.container.clientWidth){
   if(!this.pdfPage)return;
-  this.zoom=Math.max(this.zoom,3);
+  this.zoom=Math.max(this.zoom,5);
   this.panX=this.panY=0;
   const rect=this.rect();
   this.panX=visibleWidth/2-(rect.x+x*rect.w);
