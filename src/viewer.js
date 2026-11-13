@@ -14,21 +14,7 @@ export function marker(ctx,x,y,color,shape,number,r=markerRadius){
   ctx.font=`${r*1.8}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
   ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#202020';
   ctx.fillText(emojiSymbols[shape],x,y);
-  if(number!=null){
-   const label=String(number);
-   ctx.font='700 10px system-ui';
-   const width=Math.max(14,ctx.measureText(label).width+6);
-   const badgeX=x+r*.65-width/2,badgeY=y+r*.45;
-   ctx.beginPath();
-   ctx.roundRect(badgeX,badgeY,width,13,5);
-   ctx.fillStyle='#183a79';
-   ctx.fill();
-   ctx.strokeStyle='white';
-   ctx.lineWidth=1.5;
-   ctx.stroke();
-   ctx.fillStyle='white';
-   ctx.fillText(label,badgeX+width/2,badgeY+6.5);
-  }
+  if(number!=null)numberBadge(ctx,x+r*.65,y+r*.45+6.5,number);
   ctx.restore();
   return;
  }
@@ -48,6 +34,37 @@ export function marker(ctx,x,y,color,shape,number,r=markerRadius){
   ctx.fillText(number,x,y+(shape==='triangle'?2:0),r*1.4);
  }
  ctx.restore();
+}
+
+export function numberBadge(ctx,x,y,number){
+ if(number==null)return;
+ ctx.save();
+ const label=String(number);
+ ctx.font='700 10px system-ui';
+ const width=Math.max(14,ctx.measureText(label).width+6);
+ ctx.beginPath();
+ ctx.roundRect(x-width/2,y-6.5,width,13,5);
+ ctx.fillStyle='#183a79';
+ ctx.fill();
+ ctx.strokeStyle='white';
+ ctx.lineWidth=1.5;
+ ctx.stroke();
+ ctx.fillStyle='white';
+ ctx.textAlign='center';
+ ctx.textBaseline='middle';
+ ctx.fillText(label,x,y);
+ ctx.restore();
+}
+
+function highlightGeometry(annotation,rect){
+ const width=annotation.width*(annotation.projected?Math.min(rect.scale,1):rect.scale);
+ const offset=annotation.projected?width/2+4:0;
+ const points=annotation.points.length?annotation.points:[[annotation.x,annotation.y]];
+ const pixels=points.map(([x,y])=>[rect.x+x*rect.w,rect.y+y*rect.h-offset]);
+ const badge=pixels[Math.floor((pixels.length-1)/2)].slice();
+ if(annotation.projected)badge[0]=(pixels[0][0]+pixels.at(-1)[0])/2;
+ badge[1]-=Math.min(13,width/2)+8;
+ return {width,pixels,badge};
 }
 
 function markerY(annotation,rect){
@@ -120,7 +137,18 @@ export class Viewer{
  setMarks(marks){this.marks=marks;this.draw(false);}
  draw(render=true){const w=this.container.clientWidth,h=this.container.clientHeight;if(!w||!h)return;this.ratio=Math.min(devicePixelRatio||1,Math.sqrt(10000000/(w*h)));for(const c of [this.canvas,this.overlay]){if(c.width!==Math.round(w*this.ratio)||c.height!==Math.round(h*this.ratio)){c.width=Math.round(w*this.ratio);c.height=Math.round(h*this.ratio);}}
  const ctx=this.canvas.getContext('2d');ctx.setTransform(this.ratio,0,0,this.ratio,0,0);ctx.clearRect(0,0,w,h);const ov=this.overlay.getContext('2d');ov.setTransform(this.ratio,0,0,this.ratio,0,0);ov.clearRect(0,0,w,h);const r=this.rect();if(!r)return;ctx.fillStyle='white';ctx.fillRect(r.x,r.y,r.w,r.h);if(this.detail){const d=this.detail,k=r.scale/d.rect.scale;ctx.drawImage(d.canvas,(r.x-d.rect.x*k),(r.y-d.rect.y*k),d.w*k,d.h*k);}
- ov.save();ov.beginPath();ov.rect(r.x,r.y,r.w,r.h);ov.clip();for(const a of this.marks.filter(a=>a.page===this.pageNumber&&!a.deleted&&a.kind==='highlight'))this.line(ov,a.points,a.color,a.width,a.opacity,r);if(this.stroke)this.line(ov,this.stroke,this.settings.highlight.color,this.settings.highlight.width,this.settings.highlight.opacity,r);for(const a of this.marks.filter(a=>a.page===this.pageNumber&&!a.deleted&&a.kind==='note'))marker(ov,r.x+a.x*r.w,markerY(a,r),a.color,a.shape,a.number);
+ ov.save();ov.beginPath();ov.rect(r.x,r.y,r.w,r.h);ov.clip();
+ const marks=this.marks.filter(a=>a.page===this.pageNumber&&!a.deleted);
+ for(const a of marks){
+  if(a.kind!=='highlight')continue;
+  const {width,pixels,badge}=highlightGeometry(a,r);
+  this.strokeLine(ov,pixels,a.color,width,a.opacity);
+  numberBadge(ov,...badge,a.number);
+ }
+ if(this.stroke)this.strokeLine(ov,this.stroke.map(([x,y])=>[r.x+x*r.w,r.y+y*r.h]),this.settings.highlight.color,this.settings.highlight.width*r.scale,this.settings.highlight.opacity);
+ for(const a of marks){
+  if(a.kind==='note')marker(ov,r.x+a.x*r.w,markerY(a,r),a.color,a.shape,a.number);
+ }
  if(this.laser)drawLaser(ov,r,this.laser);
  for(const {value,axis,label,color} of this.guides||[]){
   ov.strokeStyle=color;ov.fillStyle=color;ov.lineWidth=2;ov.setLineDash([7,5]);ov.beginPath();
@@ -133,10 +161,35 @@ export class Viewer{
   ov.lineWidth=4;ov.strokeStyle='white';ov.strokeText(label,tx,ty);ov.fillText(label,tx,ty);
  }
  ov.restore();if(render){this.revision++;clearTimeout(this.timer);this.timer=setTimeout(()=>this.renderDetail(),100);}}
- line(ctx,points,color,width,opacity,r){if(!points?.length)return;ctx.save();ctx.beginPath();points.forEach((p,i)=>{const x=r.x+p[0]*r.w,y=r.y+p[1]*r.h;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.strokeStyle=color;ctx.globalAlpha=opacity/100;ctx.lineWidth=width*r.scale;ctx.lineCap=ctx.lineJoin='round';ctx.stroke();ctx.restore();}
+ strokeLine(ctx,points,color,width,opacity){
+  if(!points.length)return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(...points[0]);
+  for(const point of points)ctx.lineTo(...point);
+  if(points.length===1)ctx.lineTo(...points[0]);
+  ctx.strokeStyle=color;
+  ctx.globalAlpha=opacity/100;
+  ctx.lineWidth=width;
+  ctx.lineCap=ctx.lineJoin='round';
+  ctx.stroke();
+  ctx.restore();
+ }
  async renderDetail(){const p=this.pdfPage,r=this.rect(),rev=this.revision;if(!p||!r)return;this.task?.cancel();const w=this.container.clientWidth,h=this.container.clientHeight,out=document.createElement('canvas');out.width=this.canvas.width;out.height=this.canvas.height;const ratio=this.ratio;try{const ctx=out.getContext('2d');this.task=p.render({canvasContext:ctx,viewport:p.getViewport({scale:r.scale}),transform:[ratio,0,0,ratio,r.x*ratio,r.y*ratio],background:'rgba(0,0,0,0)'});await this.task.promise;if(rev!==this.revision)return;this.detail={canvas:out,rect:r,w,h};this.draw(false);}catch(e){if(e.name!=='RenderingCancelledException')this.callbacks.error(e);}}
  down(e){if(!this.pdfPage)return;e.preventDefault();this.container.setPointerCapture(e.pointerId);const p=this.local(e);this.pointers.set(e.pointerId,p);if(this.pointers.size===1){this.start=p;this.last=p;this.moved=false;this.multi=false;const r=this.rect();if(this.mode==='highlight'&&p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h)this.stroke=[normalized(p.x,p.y,r)];}else{this.multi=true;this.stroke=null;const a=[...this.pointers.values()];this.distance=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);this.center={x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2};}}
  move(e){if(!this.pointers.has(e.pointerId))return;const p=this.local(e);this.pointers.set(e.pointerId,p);if(this.pointers.size>=2){const a=[...this.pointers.values()],distance=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y),center={x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2};if(this.distance>0)this.zoomAt(distance/this.distance,center.x,center.y);this.panX+=center.x-this.center.x;this.panY+=center.y-this.center.y;this.distance=distance;this.center=center;this.draw();return;}this.moved||=Math.hypot(p.x-this.start.x,p.y-this.start.y)>3;if(this.stroke){if(this.stroke.length<20000)this.stroke.push(normalized(p.x,p.y,this.rect()));this.draw(false);}else if(!this.mode||this.multi){this.panX+=p.x-this.last.x;this.panY+=p.y-this.last.y;this.draw();}this.last=p;}
- up(e){if(!this.pointers.has(e.pointerId))return;const p=this.local(e);this.pointers.delete(e.pointerId);if(this.pointers.size){this.last=[...this.pointers.values()][0];return;}if(!this.multi){if(this.stroke&&this.moved){const points=this.stroke;this.stroke=null;this.callbacks.create({kind:'highlight',points,...this.settings.highlight,x:points[0][0],y:points[0][1],shape:'circle'});}else if(!this.moved){const r=this.rect();if(this.pick){if(p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h)this.pick(normalized(p.x,p.y,r));this.draw(false);return;}if(this.laser&&p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h){this.callbacks.laser?.(normalized(p.x,p.y,r));return;}const hit=this.hit(p.x,p.y);if(hit)this.callbacks.edit(hit);else if(this.mode==='note'){const r=this.rect();if(p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h){const [x,y]=normalized(p.x,p.y,r);this.callbacks.create({kind:'note',x,y,...this.settings.note,points:[],width:18,opacity:100});}}}}this.stroke=null;this.draw(false);}
- hit(x,y){const r=this.rect();const all=this.marks.filter(a=>a.page===this.pageNumber&&!a.deleted).slice().reverse();for(const a of all.filter(a=>a.kind==='note'))if(Math.hypot(x-r.x-a.x*r.w,y-markerY(a,r))<25)return a;for(const a of all.filter(a=>a.kind==='highlight'))for(let i=1;i<a.points.length;i++){const p=a.points[i-1],q=a.points[i];if(segmentDistance(x,y,r.x+p[0]*r.w,r.y+p[1]*r.h,r.x+q[0]*r.w,r.y+q[1]*r.h)<Math.max(12,a.width*r.scale/2))return a;}return null;}
+ up(e){if(!this.pointers.has(e.pointerId))return;const p=this.local(e);this.pointers.delete(e.pointerId);if(this.pointers.size){this.last=[...this.pointers.values()][0];return;}if(!this.multi){if(this.stroke&&this.moved){const points=this.stroke;this.stroke=null;this.callbacks.create({kind:'highlight',points,...this.settings.highlight,x:points[0][0],y:points[0][1],shape:'circle'});}else if(!this.moved){const r=this.rect();if(this.pick){if(p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h)this.pick(normalized(p.x,p.y,r));this.draw(false);return;}if(this.laser&&p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h){this.callbacks.laser?.(normalized(p.x,p.y,r));return;}const hit=this.hit(p.x,p.y);if(hit.length)this.callbacks.edit(hit);else if(this.mode==='note'){const r=this.rect();if(p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h){const [x,y]=normalized(p.x,p.y,r);this.callbacks.create({kind:'note',x,y,...this.settings.note,points:[],width:18,opacity:100});}}}}this.stroke=null;this.draw(false);}
+ hit(x,y){
+  const rect=this.rect();
+  if(!rect||x<rect.x||x>rect.x+rect.w||y<rect.y||y>rect.y+rect.h)return [];
+  return this.marks.filter(a=>{
+   if(a.page!==this.pageNumber||a.deleted)return false;
+   if(a.kind==='note')return Math.hypot(x-rect.x-a.x*rect.w,y-markerY(a,rect))<25;
+   const {width,pixels,badge}=highlightGeometry(a,rect);
+   if(a.number!=null&&Math.abs(x-badge[0])<=Math.max(11,String(a.number).length*3+5)&&Math.abs(y-badge[1])<=10)return true;
+   const tolerance=Math.max(12,width/2);
+   if(pixels.length===1)return Math.hypot(x-pixels[0][0],y-pixels[0][1])<=tolerance;
+   return pixels.some((point,i)=>i>0&&segmentDistance(x,y,...pixels[i-1],...point)<=tolerance);
+  }).reverse();
+ }
 }

@@ -117,5 +117,11 @@ test('Database permissions, approval, authorship, numbering and private files',a
  await assert.rejects(db.query('select sw_publish_ship_plan($1,$1,$2)',[doc2.id,shipPlan]));
  await as(admin);
  assert.equal((await db.query('select sw_project_level($1) as level',[p.id])).rows[0].level,'edit');
+ await db.exec('reset role');
+ await db.exec(await readFile('supabase/009_annotation_numbers.sql','utf8'));
+ assert.equal((await db.query('select count(*)::int as missing from sw_annotations where number is null')).rows[0].missing,0);
+ await as(a);
+ const [newHighlight]=(await db.query("insert into sw_annotations(project_id,document_id,page,kind,number) values($1,$2,2,'highlight',9999) returning number",[p.id,doc2.id])).rows;
+ assert.ok(newHighlight.number>marker.number&&newHighlight.number<9999);
  await db.close();
 });

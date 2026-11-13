@@ -2,7 +2,7 @@ import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale
 import {projectCover} from './cards.js';
 import {watchChanges} from './realtime.js';
 import * as api from './api.js';
-import {Viewer,loadPdf,marker} from './viewer.js';
+import {Viewer,loadPdf,marker,numberBadge} from './viewer.js';
 import {snapshot,grouped,clamp} from './model.js';
 import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,placeLaser,laserOnPage} from './ship-model.js';
 import {editShipPlan} from './ship-editor.js';
@@ -23,7 +23,7 @@ const filterIds = ['notes-query','notes-page','notes-kind','notes-author','notes
 let finishPick = null;
 let lastDeckView = null;
 let laser = null;
-const viewer=new Viewer($('viewport'),$('pdf-canvas'),$('marks-canvas'),{create:a=>makeAnnotation(a).catch(report),edit:a=>openMarker(a).catch(report),error:report,laser:setLaserPoint});
+const viewer=new Viewer($('viewport'),$('pdf-canvas'),$('marks-canvas'),{create:a=>makeAnnotation(a).catch(report),edit:items=>openMarkers(items).catch(report),error:report,laser:setLaserPoint});
 const setupViewer=new Viewer($('setup-viewport'),$('setup-pdf'),$('setup-marks'),{error:report});
 let setupPdf,closeSetup,setupLoading=false;
 $('setup-fit').onclick=()=>setupViewer.fit();
@@ -405,7 +405,7 @@ $('notes-scope').onchange=()=>{
  localStorage.setItem('sw.all',all);
  refreshList();
 };
-function badge(a){const c=document.createElement('canvas');c.className='badge';c.width=c.height=70;const ctx=c.getContext('2d');ctx.scale(2,2);if(a.kind==='note')marker(ctx,17.5,17.5,a.color,a.shape,a.number,12);else{ctx.strokeStyle=a.color;ctx.globalAlpha=a.opacity/100;ctx.lineWidth=10;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(6,17);ctx.lineTo(29,17);ctx.stroke();}return c;}
+function badge(a){const c=document.createElement('canvas');c.className='badge';c.width=c.height=70;const ctx=c.getContext('2d');ctx.scale(2,2);if(a.kind==='note')marker(ctx,17.5,17.5,a.color,a.shape,a.number,12);else{ctx.strokeStyle=a.color;ctx.globalAlpha=a.opacity/100;ctx.lineWidth=10;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(6,17);ctx.lineTo(29,17);ctx.stroke();ctx.globalAlpha=1;numberBadge(ctx,18,17,a.number);}return c;}
 for(const id of filterIds) $(id).oninput=refreshList;
 $('notes-reset').onclick=()=>{
  all=false;localStorage.setItem('sw.all',all);
@@ -469,6 +469,31 @@ async function openListedNote(note){
  if(!canWrite())await openAnnotation(note);
 }
 
+function annotationHeading(annotation){
+ const type=tr(annotation.kind==='note'?'Nota':'Evidenziazione');
+ return annotation.number==null?type:type+' '+annotation.number;
+}
+
+async function openMarkers(hits){
+ if(dialogOpen||finishPick||loading)return;
+ const ids=new Set(hits.map(item=>item.id));
+ const items=annotations.filter(item=>ids.has(item.id)&&!item.deleted);
+ if(!items.length)return;
+ if(items.length===1){await openMarker(items[0]);return;}
+ const box=modal(tr('Elementi in questa zona'));
+ for(const item of items){
+  const choice=btn('',async()=>{
+   await closeModal();
+   await openMarker(item);
+  },'annotation-choice');
+  const info=text('span',annotationHeading(item)+(item.title?' · '+item.title:''));
+  info.append(text('small',pageName(item.page)+' · '+item.author_name));
+  choice.append(badge(item),info);
+  box.append(choice);
+ }
+ $('dialog-footer').append(btn(tr('Chiudi'),closeModal));
+}
+
 async function openMarker(annotation){
  if(!isOverview())await goToNote(annotation);
  await openAnnotation(annotation);
@@ -491,7 +516,7 @@ async function openAnnotation(initial,before=initial){
   await page(current.page);
   if(current.page!==viewer.pageNumber)return;
  }
- const heading=current.kind==='note'?tr('Nota')+' '+current.number:tr('Evidenziazione');
+ const heading=annotationHeading(current);
  const author=current.author_name+' · '+date(current.created_at);
  if(!canWrite()){
   const box=modal(heading);
@@ -583,7 +608,7 @@ async function removeAnnotation(annotation,before=annotation){
 
 async function annotationMenu(annotation){
  if(!canWrite()||finishPick)return;
- const box=modal(annotation.kind==='note'?tr('Nota')+' '+annotation.number:tr('Evidenziazione'));
+ const box=modal(annotationHeading(annotation));
  box.append(btn(tr('Impostazioni aspetto'),async()=>{
   await closeModal();
   if(!dialogOpen)await toolSettings(annotation.kind,annotation);
