@@ -1,4 +1,4 @@
-import {tr} from './locale.js';
+import {tr} from './locale.js?v=454db9f1047d';
 
 export function editShipPlan({doc,pdf,viewer,controls,sheetLabel,hint,saveButton,field,btn,text,save,report}) {
  const plan=structuredClone(doc.ship_plan)||{overview:{page:1,frame0:0,frame1:74,meters:51.06},decks:[]};
