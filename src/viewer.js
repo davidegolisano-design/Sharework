@@ -6,6 +6,7 @@ export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendo
 import {emojiSymbols} from './ship-model.js';
 const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
+const selectionPadding=28;
 const projectedOffset=markerRadius+5;
 
 export function marker(ctx,x,y,color,shape,number,r=markerRadius){
@@ -184,10 +185,10 @@ export class Viewer{
   if(!rect||x<rect.x||x>rect.x+rect.w||y<rect.y||y>rect.y+rect.h)return [];
   return this.marks.filter(a=>{
    if(a.page!==this.pageNumber||a.deleted)return false;
-   if(a.kind==='note')return Math.hypot(x-rect.x-a.x*rect.w,y-markerY(a,rect))<25;
+   if(a.kind==='note')return Math.hypot(x-rect.x-a.x*rect.w,y-markerY(a,rect))<=markerRadius+selectionPadding;
    const {width,pixels,badge}=highlightGeometry(a,rect);
-   if(a.number!=null&&Math.abs(x-badge[0])<=Math.max(11,String(a.number).length*3+5)&&Math.abs(y-badge[1])<=10)return true;
-   const tolerance=Math.max(12,width/2);
+   if(a.number!=null&&Math.abs(x-badge[0])<=Math.max(11,String(a.number).length*3+5)+selectionPadding&&Math.abs(y-badge[1])<=7+selectionPadding)return true;
+   const tolerance=width/2+selectionPadding;
    if(pixels.length===1)return Math.hypot(x-pixels[0][0],y-pixels[0][1])<=tolerance;
    return pixels.some((point,i)=>i>0&&segmentDistance(x,y,...pixels[i-1],...point)<=tolerance);
   }).reverse();
