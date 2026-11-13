@@ -417,7 +417,7 @@ $('notes-scope').onchange=()=>{
  localStorage.setItem('sw.all',all);
  refreshList();
 };
-function badge(a){const c=document.createElement('canvas');c.className='badge';c.width=c.height=70;const ctx=c.getContext('2d');ctx.scale(2,2);if(!annotationStrokes(a).length)marker(ctx,17.5,17.5,a.color,a.shape,a.number,12);else{ctx.strokeStyle=a.color;ctx.globalAlpha=a.opacity/100;ctx.lineWidth=10;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(6,17);ctx.lineTo(29,17);ctx.stroke();ctx.globalAlpha=1;numberBadge(ctx,18,17,a.number);}return c;}
+function badge(a){const c=document.createElement('canvas');c.className='badge';c.width=c.height=70;const ctx=c.getContext('2d');ctx.scale(2,2);if(a.kind==='note')marker(ctx,17.5,17.5,a.color,a.shape,a.number,12);else{ctx.strokeStyle=a.color;ctx.globalAlpha=a.opacity/100;ctx.lineWidth=10;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(6,17);ctx.lineTo(29,17);ctx.stroke();ctx.globalAlpha=1;numberBadge(ctx,18,17,a.number);}return c;}
 for(const id of filterIds) $(id).oninput=refreshList;
 $('notes-reset').onclick=()=>{
  all=false;localStorage.setItem('sw.all',all);

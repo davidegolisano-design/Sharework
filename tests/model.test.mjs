@@ -59,7 +59,7 @@ test('Overview highlights span their occupied frames even on reversed plans',()=
  const [mark]=projectMarks({overview,decks:[deck]},[{page:2,kind:'highlight',number:18,points:[[.75,.3],[.25,.6],[.5,.1]]}]);
  assert.equal(mark.number,18);
  assert.equal(mark.kind,'highlight');
- assert.deepEqual(mark.points.map(([x,y])=>[Math.round(x*100),y]),[[20,.45],[40,.45]]);
+ assert.deepEqual(mark.strokes[0].map(([x,y])=>[Math.round(x*100),y]),[[20,.45],[40,.45]]);
 });
 
 test('A multi-stroke note projects separate intervals under one note identity',()=>{
@@ -68,6 +68,8 @@ test('A multi-stroke note projects separate intervals under one note identity',(
  const note={id:'shared',page:2,kind:'note',number:3,shape:'circle',points:[],
   strokes:[[[.1,.5],[.2,.5]],[[.7,.3],[.8,.4]]]};
  const marks=projectMarks({overview,decks:[deck]},[note]);
- assert.deepEqual(marks.map(mark=>[mark.id,mark.number]),[['shared',3],['shared',3]]);
- assert.ok(marks[0].points[1][0]<marks[1].points[0][0]);
+ const [mark]=marks;
+ assert.equal(marks.length,1);
+ assert.deepEqual([mark.id,mark.kind,mark.shape,mark.number],['shared','note','circle',3]);
+ assert.ok(mark.strokes[0][1][0]<mark.strokes[1][0][0]);
 });

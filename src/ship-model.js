@@ -52,6 +52,7 @@ export function projectMarks(plan, annotations) {
     const deck = byPage.get(annotation.page);
     if (!deck) continue;
     const strokes=annotationStrokes(annotation);
+    const ranges=[];
     for (const stroke of strokes) {
       let left = Infinity, right = -Infinity;
       for (const [sourceX] of stroke) {
@@ -60,14 +61,15 @@ export function projectMarks(plan, annotations) {
         right = Math.max(right,x);
       }
       if (!Number.isFinite(left) || !Number.isFinite(right) || right < 0 || left > 1) continue;
-      const points = [[Math.max(0,left),deck.base],[Math.min(1,right),deck.base]];
-      projected.push({...annotation,page:overview.page,kind:'highlight',points,strokes:[],projected:true});
+      ranges.push([[Math.max(0,left),deck.base],[Math.min(1,right),deck.base]]);
     }
-    if (!strokes.length) {
-      const {x} = mapDeckView(deck, overview, {x:annotation.x,width:1});
-      if (x < 0 || x > 1 || !Number.isFinite(x)) continue;
-      projected.push({...annotation,page:overview.page,x,y:deck.base,projected:true});
+    if (strokes.length && !ranges.length) continue;
+    let {x} = mapDeckView(deck, overview, {x:annotation.x,width:1});
+    if (!Number.isFinite(x) || x < 0 || x > 1) {
+      if (!ranges.length) continue;
+      x=(ranges[0][0][0]+ranges[0][1][0])/2;
     }
+    projected.push({...annotation,page:overview.page,x,y:deck.base,points:[],strokes:ranges,projected:true});
   }
   return projected;
 }
