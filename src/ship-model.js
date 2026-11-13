@@ -1,3 +1,4 @@
+import {annotationStrokes} from './model.js';
 export const emojiSymbols = {flame:'🔥',warning:'⚠️',electric:'⚡',tool:'🔧'};
 export const noteShapes = [
   ['circle', 'Punto'], ['square', 'Quadrato'], ['diamond', 'Rombo'], ['triangle', 'Triangolo'],
@@ -50,17 +51,19 @@ export function projectMarks(plan, annotations) {
   for (const annotation of annotations) {
     const deck = byPage.get(annotation.page);
     if (!deck) continue;
-    if (annotation.kind === 'highlight') {
+    const strokes=annotationStrokes(annotation);
+    for (const stroke of strokes) {
       let left = Infinity, right = -Infinity;
-      for (const [sourceX] of annotation.points.length ? annotation.points : [[annotation.x]]) {
+      for (const [sourceX] of stroke) {
         const {x} = mapDeckView(deck, overview, {x:sourceX,width:1});
         left = Math.min(left,x);
         right = Math.max(right,x);
       }
       if (!Number.isFinite(left) || !Number.isFinite(right) || right < 0 || left > 1) continue;
       const points = [[Math.max(0,left),deck.base],[Math.min(1,right),deck.base]];
-      projected.push({...annotation,page:overview.page,points,projected:true});
-    } else {
+      projected.push({...annotation,page:overview.page,kind:'highlight',points,strokes:[],projected:true});
+    }
+    if (!strokes.length) {
       const {x} = mapDeckView(deck, overview, {x:annotation.x,width:1});
       if (x < 0 || x > 1 || !Number.isFinite(x)) continue;
       projected.push({...annotation,page:overview.page,x,y:deck.base,projected:true});
@@ -74,7 +77,7 @@ export function filterNotes(annotations, {query, page, kind, author, day}) {
   return annotations.filter(a => {
     const localDay = day ? new Date(a.created_at).toLocaleDateString('sv-SE') : '';
     return !a.deleted && (!page || a.page === Number(page)) &&
-      (!kind || kind === (a.kind === 'highlight' ? 'highlight' : a.shape)) &&
+      (!kind || kind === (annotationStrokes(a).length ? 'highlight' : a.shape)) &&
       (!author || a.created_by === author) && (!day || day === localDay) &&
       (!search || [a.title,a.description,a.number,a.author_name].some(value => String(value ?? '').toLocaleLowerCase('it').includes(search)));
   });

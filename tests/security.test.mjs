@@ -139,5 +139,13 @@ test('Database permissions, approval, authorship, numbering and private files',a
  await db.query('update sw_annotations set deleted=true where id=$1',[first.id]);
  const [restoredAgain]=(await db.query('update sw_annotations set deleted=false where id=$1 returning number',[first.id])).rows;
  assert.equal(restoredAgain.number,3);
+ await db.exec('reset role');
+ await db.exec(await readFile('supabase/011_note_areas.sql','utf8'));
+ await as(a);
+ const strokes=[[[.1,.2],[.2,.3]],[[.6,.7],[.8,.9]]];
+ const [area]=(await db.query('update sw_annotations set strokes=$2 where id=$1 returning strokes,number',[first.id,JSON.stringify(strokes)])).rows;
+ assert.deepEqual(area.strokes,strokes);
+ assert.equal(area.number,3);
+ await assert.rejects(db.query('update sw_annotations set strokes=$2 where id=$1',[first.id,'[[[0,0],[2,0]]]']));
  await db.close();
 });
