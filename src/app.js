@@ -196,8 +196,10 @@ function selectOptions(select,options){
 function updatePages(){
  const current=viewer.pageNumber;
  $('page-label').textContent=current+' / '+(pdf?.numPages||1);
- $('undo').disabled=!canWrite()||!!finishPick||!undo.length;
- $('redo').disabled=!canWrite()||!!finishPick||!redo.length;
+ const writable=canWrite();
+ for(const el of document.querySelectorAll('#toolbar .tool-group,#undo,#redo'))el.hidden=!writable;
+ $('undo').disabled=!writable||!!finishPick||!undo.length;
+ $('redo').disabled=!writable||!!finishPick||!redo.length;
  for(const id of ['note-tool','note-settings','highlight-tool','highlight-settings']) $(id).disabled=!canPlace()||!!finishPick;
  if(!canPlace()||finishPick) mode(null);
  $('ship-pages').hidden=!plan();
@@ -279,12 +281,12 @@ function refreshList(){
    $('notes-list').append(text('div',pageName(a.page),'page-group'));
    previous=a.page;
   }
-  const row=text('div','','annotation'),open=btn('',()=>goToNote(a),'annotation-open');
+  const row=text('div','','annotation'),open=btn('',()=>openListedNote(a),'annotation-open');
   open.append(text('span',a.title||(a.kind==='note'?tr('Nota')+' '+a.number:tr('Evidenziazione')),'annotation-title'));
   if(a.description)open.append(text('span',a.description,'annotation-description'));
   open.append(text('span',a.author_name+' · '+date(a.created_at),'annotation-author'));
   const b=badge(a);
-  b.onclick=()=>goToNote(a).catch(report);
+  b.onclick=()=>openListedNote(a).catch(report);
   row.append(b,open);
   if(canWrite())row.append(btn('⋮',()=>annotationMenu(a),'more'));
   $('notes-list').append(row);
@@ -300,6 +302,12 @@ function merge(a){
 async function patch(a,values){if(!canWrite())throw Error(tr('Accesso in sola lettura.'));const rows=await api.table('sw_annotations','id=eq.'+a.id+'&version=eq.'+a.version,{method:'PATCH',body:values});if(!rows?.length)throw Error(tr('Questa annotazione è stata modificata da un altro utente. Le tue modifiche non sono state sovrascritte: copia il testo e riapri la nota aggiornata.'));merge(rows[0]);return rows[0];}
 function record(before,after){if(before&&JSON.stringify(snapshot(before))===JSON.stringify(snapshot(after)))return;undo.push({id:after.id,before:before?snapshot(before):{...snapshot(after),deleted:true},after:snapshot(after),expected:after.version});if(undo.length>40)undo.shift();redo=[];updatePages();}
 async function makeAnnotation(values){if(loading||dialogOpen||finishPick||!project||!canPlace())return;loading=true;try{const [a]=await api.table('sw_annotations','',{method:'POST',body:{...values,project_id:project.id,document_id:activeDocument.id,page:viewer.pageNumber,title:tr(values.kind==='note'?'Nota':'Evidenziazione'),description:''}});merge(a);await openAnnotation(a,null);}finally{loading=false;}}
+async function openListedNote(note){
+ if(dialogOpen||finishPick||loading)return;
+ await goToNote(note);
+ if(!canWrite())await openAnnotation(note);
+}
+
 async function openMarker(annotation){
  if(!isOverview())await goToNote(annotation);
  await openAnnotation(annotation);
@@ -325,20 +333,28 @@ async function openAnnotation(initial,before=initial){
   await page(current.page);
   if(current.page!==viewer.pageNumber)return;
  }
- const writable=canWrite();
+ const heading=current.kind==='note'?tr('Nota')+' '+current.number:tr('Evidenziazione');
+ const author=current.author_name+' · '+date(current.created_at);
+ if(!canWrite()){
+  const box=modal(heading);
+  box.append(text('div',author,'author-detail'));
+  if(current.title)box.append(text('h3',current.title,'note-reading-title'));
+  if(current.description)box.append(text('p',current.description,'note-reading-description'));
+  addNoteNavigation(current);
+  return;
+ }
  let timer,chain=Promise.resolve(),failed=false;
- const box=modal(current.kind==='note'?tr('Nota')+' '+current.number:tr('Evidenziazione'),writable?async()=>{
+ const box=modal(heading,async()=>{
   clearTimeout(timer);
   await flush();
   if(failed)return false;
   record(before,current);
   return true;
- }:null);
- box.append(text('div',current.author_name+' · '+date(current.created_at),'author-detail'));
+ });
+ box.append(text('div',author,'author-detail'));
  const title=field(box,tr('Titolo'),{value:current.title}),description=field(box,tr('Descrizione'),{value:current.description,multiline:true});
  title.maxLength=250;
  description.maxLength=20000;
- title.readOnly=description.readOnly=!writable;
  function flush(){
   const values={title:title.value,description:description.value};
   chain=chain.then(async()=>{
@@ -349,14 +365,12 @@ async function openAnnotation(initial,before=initial){
   });
   return chain;
  }
- if(writable){
-  for(const el of [title,description])el.oninput=()=>{clearTimeout(timer);timer=setTimeout(flush,500);};
-  $('dialog-footer').append(btn(tr('Aspetto'),async()=>{
-   await closeModal();
-   if(!dialogOpen)await toolSettings(current.kind,current);
-  }));
- }
- if(writable&&current.kind==='note'&&current.page===viewer.pageNumber&&canPlace()){
+ for(const el of [title,description])el.oninput=()=>{clearTimeout(timer);timer=setTimeout(flush,500);};
+ $('dialog-footer').append(btn(tr('Aspetto'),async()=>{
+  await closeModal();
+  if(!dialogOpen)await toolSettings(current.kind,current);
+ }));
+ if(current.kind==='note'&&current.page===viewer.pageNumber&&canPlace()){
   $('dialog-footer').append(btn(tr('Sposta punto'),async()=>{
    await closeModal();
    if(dialogOpen)return;
@@ -367,9 +381,12 @@ async function openAnnotation(initial,before=initial){
    });
   }));
  }
+ addNoteNavigation(current);
+}
+function addNoteNavigation(note){
  $('dialog-footer').append(btn(tr('Vai al punto'),async()=>{
   await closeModal();
-  if(!dialogOpen)await goToNote(current);
+  if(!dialogOpen)await goToNote(annotations.find(item=>item.id===note.id)||note);
  }));
  $('dialog-footer').append(btn(tr('Chiudi'),closeModal));
 }
