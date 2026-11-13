@@ -1,11 +1,11 @@
-import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=d28c9a5bf961';
-import {projectCover} from './cards.js?v=d28c9a5bf961';
-import {watchChanges} from './realtime.js?v=d28c9a5bf961';
-import * as api from './api.js?v=d28c9a5bf961';
-import {Viewer,loadPdf,marker} from './viewer.js?v=d28c9a5bf961';
-import {snapshot,grouped,clamp,annotationStrokes} from './model.js?v=d28c9a5bf961';
-import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,placeLaser,laserOnPage} from './ship-model.js?v=d28c9a5bf961';
-import {editShipPlan} from './ship-editor.js?v=d28c9a5bf961';
+import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=b6fd6f6b8684';
+import {projectCover} from './cards.js?v=b6fd6f6b8684';
+import {watchChanges} from './realtime.js?v=b6fd6f6b8684';
+import * as api from './api.js?v=b6fd6f6b8684';
+import {Viewer,loadPdf,marker} from './viewer.js?v=b6fd6f6b8684';
+import {snapshot,grouped,clamp,annotationStrokes} from './model.js?v=b6fd6f6b8684';
+import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,placeLaser,laserOnPage} from './ship-model.js?v=b6fd6f6b8684';
+import {editShipPlan} from './ship-editor.js?v=b6fd6f6b8684';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
 let stopRealtime=null,refreshTimer;
 let user,profile,projects=[],project,projectLevel,activeDocument,annotations=[],pdf,authMode='login',dialogClose=null,dialogOpen=false,polling=false,epoch=0;
@@ -630,8 +630,12 @@ function updateAreaControls(){
  $('area-count').textContent=tr('Tratti')+': '+strokes.length;
  $('area-undo').disabled=Boolean(saving)||!strokes.length;
  $('area-clear').disabled=$('area-undo').disabled;
- for(const id of ['area-save','area-cancel','area-pan','area-color'])$(id).disabled=Boolean(saving);
- $('area-color').value=viewer.areaDraft.color;
+ for(const id of ['area-save','area-cancel','area-pan','area-color','area-width','area-transparency'])$(id).disabled=Boolean(saving);
+ $('area-color').value=areaSession.color;
+ $('area-width').value=areaSession.width;
+ $('area-width-value').value=areaSession.width;
+ $('area-transparency').value=100-areaSession.opacity;
+ $('area-transparency-value').value=(100-areaSession.opacity)+'%';
  $('area-pan').setAttribute('aria-pressed',String(viewer.mode!=='area'));
  viewer.draw(false);
 }
@@ -652,11 +656,14 @@ $('area-pan').onclick=()=>{
  viewer.mode=viewer.mode==='area'?null:'area';
  updateAreaControls();
 };
-$('area-color').oninput=()=>{
- if(!areaSession)return;
- areaSession.color=viewer.areaDraft.color=$('area-color').value;
- viewer.draw(false);
-};
+function setAreaStyle(property,value){
+ if(!areaSession||areaSession.saving)return;
+ areaSession[property]=viewer.areaDraft[property]=value;
+ updateAreaControls();
+}
+$('area-color').oninput=()=>setAreaStyle('color',$('area-color').value);
+$('area-width').oninput=()=>setAreaStyle('width',$('area-width').valueAsNumber);
+$('area-transparency').oninput=()=>setAreaStyle('opacity',100-$('area-transparency').valueAsNumber);
 $('area-undo').onclick=()=>{areaSession?.strokes.pop();updateAreaControls();};
 $('area-clear').onclick=()=>{if(areaSession)areaSession.strokes.length=0;updateAreaControls();};
 $('area-cancel').onclick=()=>{

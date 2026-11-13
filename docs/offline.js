@@ -1,3 +1,3 @@
-import {registerStatic,translateStatic} from './locale.js?v=d28c9a5bf961';
+import {registerStatic,translateStatic} from './locale.js?v=b6fd6f6b8684';
 registerStatic();
 translateStatic();
