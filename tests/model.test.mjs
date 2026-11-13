@@ -61,3 +61,13 @@ test('Overview highlights span their occupied frames even on reversed plans',()=
  assert.equal(mark.kind,'highlight');
  assert.deepEqual(mark.points.map(([x,y])=>[Math.round(x*100),y]),[[20,.45],[40,.45]]);
 });
+
+test('A multi-stroke note projects separate intervals under one note identity',()=>{
+ const overview={page:1,x0:.1,x1:.9,frame0:0,frame1:80,meters:80};
+ const deck={...overview,page:2,base:.4};
+ const note={id:'shared',page:2,kind:'note',number:3,shape:'circle',points:[],
+  strokes:[[[.1,.5],[.2,.5]],[[.7,.3],[.8,.4]]]};
+ const marks=projectMarks({overview,decks:[deck]},[note]);
+ assert.deepEqual(marks.map(mark=>[mark.id,mark.number]),[['shared',3],['shared',3]]);
+ assert.ok(marks[0].points[1][0]<marks[1].points[0][0]);
+});

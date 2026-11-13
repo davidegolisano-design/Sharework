@@ -123,3 +123,8 @@ button.danger:hover:not(:disabled){background:#8c1c20;border-color:#8c1c20}
 .annotation-choice{display:flex;align-items:center;gap:10px;width:100%;margin:6px 0;text-align:left;white-space:normal;overflow-wrap:anywhere}
 .annotation-choice .badge{flex:none}
 .annotation-choice small{display:block;margin-top:3px;color:#5c6470}
+
+#area-banner{display:flex;align-items:center;flex-wrap:wrap;gap:5px;padding:5px 8px;background:#e5edfc}
+#area-banner button{min-height:32px;padding:4px 8px;font-size:12px}
+#area-banner input{width:36px;height:32px}
+#area-pan[aria-pressed="true"]{background:#2f529e;color:#fff}

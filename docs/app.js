@@ -2,8 +2,8 @@ import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale
 import {projectCover} from './cards.js';
 import {watchChanges} from './realtime.js';
 import * as api from './api.js';
-import {Viewer,loadPdf,marker,numberBadge} from './viewer.js?v=zoom-selection';
-import {snapshot,grouped,clamp} from './model.js';
+import {Viewer,loadPdf,marker,numberBadge} from './viewer.js?v=note-areas';
+import {snapshot,grouped,clamp,annotationStrokes} from './model.js';
 import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,placeLaser,laserOnPage} from './ship-model.js';
 import {editShipPlan} from './ship-editor.js';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
@@ -21,9 +21,10 @@ const pageName = n => plan()?.overview.page===n ? 'General Overview' : plan()?.d
 const phoneLayout=matchMedia('(max-width:600px), (orientation:landscape) and (max-height:550px)');
 const filterIds = ['notes-query','notes-page','notes-kind','notes-author','notes-day'];
 let finishPick = null;
+let areaSession = null;
 let lastDeckView = null;
 let laser = null;
-const viewer=new Viewer($('viewport'),$('pdf-canvas'),$('marks-canvas'),{create:a=>makeAnnotation(a).catch(report),edit:items=>openMarkers(items).catch(report),error:report,laser:setLaserPoint});
+const viewer=new Viewer($('viewport'),$('pdf-canvas'),$('marks-canvas'),{create:a=>makeAnnotation(a).catch(report),edit:items=>openMarkers(items).catch(report),error:report,laser:setLaserPoint,stroke:addAreaStroke});
 const setupViewer=new Viewer($('setup-viewport'),$('setup-pdf'),$('setup-marks'),{error:report});
 let setupPdf,closeSetup,setupLoading=false;
 $('setup-fit').onclick=()=>setupViewer.fit();
@@ -74,7 +75,7 @@ function toast(message){$('toast').textContent=message;$('toast').hidden=false;c
 function screen(name){screens.forEach(id=>$(id).hidden=id!==name);}
 function status(value){$('sync-state').textContent=value;}
 function date(value){return new Date(value).toLocaleString(locale(),{dateStyle:'short',timeStyle:'short'});}
-function mode(value){if(value&&laser){laser=null;refreshLaser();}if(phoneLayout.matches)$('mobile-tools').open=false;viewer.mode=canPlace()&&!finishPick&&viewer.mode!==value?value:null;$('note-tool').classList.toggle('active',viewer.mode==='note');$('highlight-tool').classList.toggle('active',viewer.mode==='highlight');}
+function mode(value){if(value&&laser){laser=null;refreshLaser();}if(phoneLayout.matches)$('mobile-tools').open=false;viewer.mode=canPlace()&&!finishPick&&viewer.mode!==value?value:null;$('note-tool').classList.toggle('active',viewer.mode==='note');}
 function modal(title,onClose=null){if($('dialog').open)throw Error(tr('Chiudi prima la finestra aperta.'));dialogOpen=true;dialogClose=onClose;$('dialog-title').textContent=title;$('dialog-body').replaceChildren();$('dialog-footer').replaceChildren();$('dialog').showModal();return $('dialog-body');}
 async function closeModal(){if(dialogClose&&await dialogClose()===false)return;dialogClose=null;dialogOpen=false;$('dialog').close();queueRefresh();}
 $('dialog-close').onclick=()=>closeModal().catch(report);$('dialog').addEventListener('cancel',e=>{e.preventDefault();closeModal().catch(report);});$('dialog-form').onsubmit=e=>e.preventDefault();
@@ -116,7 +117,7 @@ function renderProjects(){
  if(!list.length)$('project-list').append(text('div',tr('Nessun progetto'),'empty'));
 }
 $('search').oninput=renderProjects;
-$('back-projects').onclick=()=>showProjects().catch(report);
+$('back-projects').onclick=()=>{if(!areaSession)showProjects().catch(report);};
 $('documents-back').onclick=()=>showProjects().catch(report);
 $('new-project').onclick=()=>projectEditor();
 $('edit-project').onclick=()=>projectEditor(project);
@@ -286,7 +287,7 @@ function setLaserPoint(point){
 }
 
 $('laser-view').onclick=()=>{
- if(!plan()||loading||finishPick)return;
+ if(!plan()||loading||finishPick||areaSession)return;
  if(laser)laser=null;
  else{
   const view=viewer.viewCenter(visiblePlanWidth());
@@ -303,7 +304,7 @@ function visiblePlanWidth(){
 }
 
 async function page(n,{keepPosition=false}={}){
- if(finishPick||loading||!pdf||n<1||n>pdf.numPages||n===viewer.pageNumber)return;
+ if(areaSession||finishPick||loading||!pdf||n<1||n>pdf.numPages||n===viewer.pageNumber)return;
  loading=true;
  try{
   const ship=plan();
@@ -345,16 +346,18 @@ function selectOptions(select,options){
 function updatePages(){
  const current=viewer.pageNumber;
  $('laser-view').hidden=!plan();
- $('laser-view').disabled=!!finishPick;
+ const busy=Boolean(finishPick||areaSession);
+ $('laser-view').disabled=busy;
  const writable=canWrite();
  $('mobile-tools').hidden=!writable;
  for(const el of document.querySelectorAll('#toolbar .tool-group,#undo,#redo'))el.hidden=!writable;
- $('undo').disabled=!writable||!!finishPick||!undo.length;
- $('redo').disabled=!writable||!!finishPick||!redo.length;
- for(const id of ['note-tool','note-settings','highlight-tool','highlight-settings']) $(id).disabled=!canPlace()||!!finishPick;
+ $('undo').disabled=!writable||busy||!undo.length;
+ $('redo').disabled=!writable||busy||!redo.length;
+ for(const id of ['note-tool','note-settings']) $(id).disabled=!canPlace()||busy;
  if(!canPlace()||finishPick) mode(null);
  $('ship-pages').hidden=!plan();
- $('ship-pages').disabled=!!finishPick;
+ $('ship-pages').disabled=busy;
+ $('back-projects').disabled=Boolean(areaSession);
  if(plan()){
   selectOptions($('ship-pages'),[plan().overview.page,...plan().decks.map(deck=>deck.page)].map(n=>[n,pageName(n)]));
   $('ship-pages').value=current;
@@ -362,7 +365,16 @@ function updatePages(){
 }
 $('ship-pages').onchange=()=>page(Number($('ship-pages').value),{keepPosition:true}).catch(report).finally(()=>{$('ship-pages').value=viewer.pageNumber;});
 
+function stopArea(){
+ areaSession=null;
+ viewer.areaDraft=null;
+ viewer.stroke=null;
+ if(viewer.mode==='area')viewer.mode=null;
+ $('area-banner').hidden=true;
+}
+
 function cancelPick(){
+ stopArea();
  finishPick=null;
  viewer.pick=null;
  viewer.guides=[];
@@ -389,7 +401,7 @@ $('fit').onclick=()=>{
  const visibleWidth=visiblePlanWidth();
  const view=viewer.viewCenter(visibleWidth);
  viewer.centerView(clamp(view?.x??.5,0,1),.5,{visibleWidth,fitHeight:true});
-};$('note-tool').onclick=()=>mode('note');$('highlight-tool').onclick=()=>mode('highlight');
+};$('note-tool').onclick=()=>mode('note');
 function applyPanel(){const available=$('workspace-body').clientWidth;const width=clamp(panelWidth,160,Math.max(160,available-180));$('notes-panel').hidden=panelHidden;$('notes-panel').style.width=width+'px';$('workspace-body').style.setProperty('--notes-width',width+'px');$('panel-toggle').setAttribute('aria-expanded',String(!panelHidden));$('mobile-notes').setAttribute('aria-expanded',String(!panelHidden));$('panel-toggle').textContent=panelHidden?'◂':'▸';}
 function toggleNotes(){panelHidden=!panelHidden;applyPanel();}
 $('panel-toggle').onclick=$('mobile-notes').onclick=toggleNotes;
@@ -405,7 +417,7 @@ $('notes-scope').onchange=()=>{
  localStorage.setItem('sw.all',all);
  refreshList();
 };
-function badge(a){const c=document.createElement('canvas');c.className='badge';c.width=c.height=70;const ctx=c.getContext('2d');ctx.scale(2,2);if(a.kind==='note')marker(ctx,17.5,17.5,a.color,a.shape,a.number,12);else{ctx.strokeStyle=a.color;ctx.globalAlpha=a.opacity/100;ctx.lineWidth=10;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(6,17);ctx.lineTo(29,17);ctx.stroke();ctx.globalAlpha=1;numberBadge(ctx,18,17,a.number);}return c;}
+function badge(a){const c=document.createElement('canvas');c.className='badge';c.width=c.height=70;const ctx=c.getContext('2d');ctx.scale(2,2);if(!annotationStrokes(a).length)marker(ctx,17.5,17.5,a.color,a.shape,a.number,12);else{ctx.strokeStyle=a.color;ctx.globalAlpha=a.opacity/100;ctx.lineWidth=10;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(6,17);ctx.lineTo(29,17);ctx.stroke();ctx.globalAlpha=1;numberBadge(ctx,18,17,a.number);}return c;}
 for(const id of filterIds) $(id).oninput=refreshList;
 $('notes-reset').onclick=()=>{
  all=false;localStorage.setItem('sw.all',all);
@@ -464,7 +476,7 @@ async function patch(a,values){if(!canWrite())throw Error(tr('Accesso in sola le
 function record(before,after){if(before&&JSON.stringify(snapshot(before))===JSON.stringify(snapshot(after)))return;undo.push({id:after.id,before:before?snapshot(before):{...snapshot(after),deleted:true},after:snapshot(after),expected:after.version});if(undo.length>40)undo.shift();redo=[];updatePages();}
 async function makeAnnotation(values){if(loading||dialogOpen||finishPick||!project||!canPlace())return;loading=true;try{const [a]=await api.table('sw_annotations','',{method:'POST',body:{...values,project_id:project.id,document_id:activeDocument.id,page:viewer.pageNumber,title:tr(values.kind==='note'?'Nota':'Evidenziazione'),description:''}});merge(a);await openAnnotation(a,null);}finally{loading=false;}}
 async function openListedNote(note){
- if(dialogOpen||finishPick||loading)return;
+ if(dialogOpen||finishPick||loading||areaSession)return;
  await goToNote(note);
  if(!canWrite())await openAnnotation(note);
 }
@@ -475,7 +487,7 @@ function annotationHeading(annotation){
 }
 
 async function openMarkers(hits){
- if(dialogOpen||finishPick||loading)return;
+ if(dialogOpen||finishPick||loading||areaSession)return;
  const ids=new Set(hits.map(item=>item.id));
  const items=annotations.filter(item=>ids.has(item.id)&&!item.deleted);
  if(!items.length)return;
@@ -500,15 +512,15 @@ async function openMarker(annotation){
 }
 
 async function goToNote(note){
- if(dialogOpen||finishPick||loading)return;
+ if(dialogOpen||finishPick||loading||areaSession)return;
  await page(note.page);
  if(viewer.pageNumber!==note.page)return;
- const points=note.kind==='highlight'?note.points:null;
+ const [points]=annotationStrokes(note);
  const target=points?.length?points[Math.floor(points.length/2)]:[note.x,note.y];
  viewer.focus(...target,visiblePlanWidth());
 }
 async function openAnnotation(initial,before=initial){
- if(dialogOpen||finishPick)return;
+ if(dialogOpen||finishPick||areaSession)return;
  let current=annotations.find(a=>a.id===initial.id);
  if(!current||current.deleted)return;
  if(before)before=current;
@@ -553,9 +565,15 @@ async function openAnnotation(initial,before=initial){
  for(const el of [title,description])el.oninput=()=>{clearTimeout(timer);timer=setTimeout(flush,500);};
  $('dialog-footer').append(btn(tr('Aspetto'),async()=>{
   await closeModal();
-  if(!dialogOpen)await toolSettings(current.kind,current);
+  if(!dialogOpen)await toolSettings(annotationStrokes(current).length?"highlight":current.kind,current);
  }));
- if(current.kind==='note'&&current.page===viewer.pageNumber&&canPlace()){
+ if(current.kind==='note'){
+  $('dialog-footer').append(btn(tr(current.strokes?.length?'Modifica area':'Evidenzia area'),async()=>{
+   await closeModal();
+   if(!dialogOpen)await startArea(current);
+  }));
+ }
+ if(current.kind==='note'&&!current.strokes?.length&&current.page===viewer.pageNumber&&canPlace()){
   $('dialog-footer').append(btn(tr('Sposta punto'),async()=>{
    await closeModal();
    if(dialogOpen)return;
@@ -581,6 +599,83 @@ async function openAnnotation(initial,before=initial){
  }));
  addNoteNavigation(current);
 }
+async function startArea(note){
+ await page(note.page);
+ if(viewer.pageNumber!==note.page||!canPlace())return;
+ mode(null);
+ laser=null;
+ refreshLaser();
+ const strokes=structuredClone(note.strokes||[]);
+ const style=strokes.length?note:viewer.settings.highlight;
+ areaSession={note,strokes,color:strokes.length?note.color:style.color,width:style.width,opacity:strokes.length?note.opacity:style.opacity};
+ viewer.areaDraft={...areaSession,id:note.id};
+ viewer.mode='area';
+ $('area-banner').hidden=false;
+ updateAreaControls();
+ updatePages();
+}
+
+function updateAreaControls(){
+ if(!areaSession)return;
+ const {strokes,saving}=areaSession;
+ $('area-count').textContent=tr('Tratti')+': '+strokes.length;
+ $('area-undo').disabled=Boolean(saving)||!strokes.length;
+ $('area-clear').disabled=$('area-undo').disabled;
+ for(const id of ['area-save','area-cancel','area-pan','area-color'])$(id).disabled=Boolean(saving);
+ $('area-color').value=viewer.areaDraft.color;
+ $('area-pan').setAttribute('aria-pressed',String(viewer.mode!=='area'));
+ viewer.draw(false);
+}
+
+function addAreaStroke(points){
+ if(!areaSession||areaSession.saving||points.length<2)return;
+ const {strokes}=areaSession;
+ if(strokes.length>=100||strokes.reduce((count,stroke)=>count+stroke.length,0)+points.length>20000){
+  toast(tr('Limite di tratti raggiunto.'));
+  return;
+ }
+ strokes.push(points);
+ updateAreaControls();
+}
+
+$('area-pan').onclick=()=>{
+ if(!areaSession)return;
+ viewer.mode=viewer.mode==='area'?null:'area';
+ updateAreaControls();
+};
+$('area-color').oninput=()=>{
+ if(!areaSession)return;
+ areaSession.color=viewer.areaDraft.color=$('area-color').value;
+ viewer.draw(false);
+};
+$('area-undo').onclick=()=>{areaSession?.strokes.pop();updateAreaControls();};
+$('area-clear').onclick=()=>{if(areaSession)areaSession.strokes.length=0;updateAreaControls();};
+$('area-cancel').onclick=()=>{
+ const note=areaSession?.note;
+ stopArea();
+ refreshList();
+ if(note)openAnnotation(note).catch(report);
+};
+$('area-save').onclick=async()=>{
+ const session=areaSession;
+ if(!session||session.saving)return;
+ session.saving=true;
+ viewer.mode=null;
+ updateAreaControls();
+ try{
+  const {note,strokes,color,width,opacity}=session;
+  const fields=strokes.length?{strokes,color,width,opacity}:{strokes};
+  const after=await patch(note,fields);
+  if(areaSession!==session)return;
+  stopArea();
+  record(note,after);
+  refreshList();
+  await openAnnotation(after);
+ }catch(error){
+  if(areaSession===session){session.saving=false;viewer.mode='area';updateAreaControls();}
+  report(error);
+ }
+};
 function addNoteNavigation(note){
  $('dialog-footer').append(btn(tr('Vai al punto'),async()=>{
   await closeModal();
@@ -607,11 +702,11 @@ async function removeAnnotation(annotation,before=annotation){
 }
 
 async function annotationMenu(annotation){
- if(!canWrite()||finishPick)return;
+ if(!canWrite()||finishPick||areaSession)return;
  const box=modal(annotationHeading(annotation));
  box.append(btn(tr('Impostazioni aspetto'),async()=>{
   await closeModal();
-  if(!dialogOpen)await toolSettings(annotation.kind,annotation);
+  if(!dialogOpen)await toolSettings(annotationStrokes(annotation).length?"highlight":annotation.kind,annotation);
  }));
  box.append(deleteAnnotationButton(remove=>remove(annotation)));
 }
@@ -640,8 +735,8 @@ async function toolSettings(kind,existing=null){if(!canWrite()||finishPick||(!ex
  }
  box.append(options);update();
 }else{const width=field(box,tr('Spessore')+': '+choice.width,{type:'range',value:choice.width,min:2,max:60,step:1});width.oninput=()=>{choice.width=Number(width.value);width.parentElement.firstChild.textContent=tr('Spessore')+': '+choice.width;preview();};const alpha=field(box,tr('Trasparenza')+': '+(100-choice.opacity)+'%',{type:'range',value:100-choice.opacity,min:0,max:100,step:1});alpha.oninput=()=>{choice.opacity=100-Number(alpha.value);alpha.parentElement.firstChild.textContent=tr('Trasparenza')+': '+alpha.value+'%';preview();};}preview();$('dialog-footer').append(btn(tr('Applica'),async()=>{const changes=kind==='note'?{shape:choice.shape,...(emojiSymbols[choice.shape]?{}:{color:choice.color})}:{color:choice.color,width:choice.width,opacity:choice.opacity};if(existing){const after=await patch(current,changes);record(existing,after);}else{viewer.settings[kind]={...viewer.settings[kind],...changes};localStorage.setItem('sw.tools',JSON.stringify(viewer.settings));}await closeModal();},'primary'));}
-$('note-settings').onclick=()=>toolSettings('note').catch(report);$('highlight-settings').onclick=()=>toolSettings('highlight').catch(report);
-async function travel(isRedo){if(!canWrite()||finishPick)return;const from=isRedo?redo:undo,to=isRedo?undo:redo,item=from.at(-1);if(!item||loading)return;const current=annotations.find(a=>a.id===item.id);if(!current||current.version!==item.expected)throw Error(tr('Annotazione aggiornata da un altro utente: impossibile annullare senza sovrascriverla.'));const result=await patch(current,isRedo?item.after:item.before);from.pop();to.push({...item,expected:result.version});const previous=from.findLast(entry=>entry.id===item.id);if(previous&&JSON.stringify(snapshot(result))===JSON.stringify(isRedo?previous.before:previous.after))previous.expected=result.version;updatePages();}
+$('note-settings').onclick=()=>toolSettings('note').catch(report);
+async function travel(isRedo){if(!canWrite()||finishPick||areaSession)return;const from=isRedo?redo:undo,to=isRedo?undo:redo,item=from.at(-1);if(!item||loading)return;const current=annotations.find(a=>a.id===item.id);if(!current||current.version!==item.expected)throw Error(tr('Annotazione aggiornata da un altro utente: impossibile annullare senza sovrascriverla.'));const result=await patch(current,isRedo?item.after:item.before);from.pop();to.push({...item,expected:result.version});const previous=from.findLast(entry=>entry.id===item.id);if(previous&&JSON.stringify(snapshot(result))===JSON.stringify(isRedo?previous.before:previous.after))previous.expected=result.version;updatePages();}
 $('undo').onclick=()=>travel(false).catch(report);$('redo').onclick=()=>travel(true).catch(report);
 $('users-button').onclick=()=>manageUsers().catch(report);
 async function manageUsers(){
@@ -692,14 +787,14 @@ async function syncVisible(){
   const wasApproved=profile?.approved;profile=mine;applyRole();
   if(!mine?.approved){dismissNoteSession();epoch++;await clearShipSetup();project=null;projectLevel=null;activeDocument=null;annotations=[];projects=[];viewer.clear();await pdf?.destroy();pdf=null;screen('waiting');return;}
   if(!wasApproved){await restore();return;}
-  if(activeDocument&&(dialogOpen||finishPick)){
+  if(activeDocument&&(dialogOpen||finishPick||areaSession)){
    const level=await api.rpc('sw_project_level',{target:project.id});
    if(token!==epoch)return;
    if(!level){dismissNoteSession();await showProjects();toast(tr('Accesso al progetto revocato.'));return;}
    if(level!==projectLevel){dismissNoteSession();projectLevel=level;refreshList();}
    return;
   }
-  if(dialogOpen||finishPick)return;
+  if(dialogOpen||finishPick||areaSession)return;
   if((!$('ship-setup').hidden&&!canConfigure())||(!$('documents').hidden&&!canManage())){await showProjects();return;}
   if(!$('projects').hidden){const rows=await api.table('sw_projects','select=*&order=created_at.desc');if(token===epoch&&!dialogOpen){projects=rows;renderProjects();}}
   else if(activeDocument){
@@ -731,5 +826,5 @@ $('language').onchange=()=>{
  if(!$('documents').hidden)showProjectSettings(project).catch(report);
  if(!$('workspace').hidden){refreshList();status('');}
 };
-window.addEventListener('beforeunload',e=>{if(dialogOpen){e.preventDefault();e.returnValue='';}});
+window.addEventListener('beforeunload',e=>{if(dialogOpen||areaSession){e.preventDefault();e.returnValue='';}});
 try{const callback=api.authCallback();if(callback==='recovery'){screen('auth');const box=modal(tr('Nuova password')),password=field(box,tr('Password (almeno 10 caratteri)'),{type:'password'});$('dialog-footer').append(btn(tr('Aggiorna'),async()=>{if(password.value.length<10)throw Error(tr('Usa almeno 10 caratteri.'));await api.request('/auth/v1/user',{method:'PUT',body:{password:password.value}});await closeModal();await restore();},'primary'));}else await restore();}catch(e){$('auth-error').textContent=tr(e.message);}
