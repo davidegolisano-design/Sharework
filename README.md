@@ -4,7 +4,8 @@ Web app per progetti PDF condivisi, con registrazione, accesso e approvazione de
 
 ## Funzioni
 
-- Importazione PDF (massimo 50 MB) in Supabase Storage privato.
+- Elenco progetti dopo l'accesso; ogni progetto contiene uno o più documenti PDF.
+- Importazione PDF (massimo 50 MB per file) in Supabase Storage privato.
 - Note numerate per progetto, quattro forme, tavolozza colori.
 - Evidenziatore libero con spessore in coordinate PDF e trasparenza.
 - Titolo e descrizione salvati automaticamente, nome autore e data assegnati dal database.
@@ -29,7 +30,7 @@ L'anteprima usa `http://127.0.0.1:4173`. `dist` è il sito statico da pubblicare
 
 ## Configurazione Supabase
 
-1. Nel SQL Editor del progetto eseguire **una sola volta** `supabase/001_sharework.sql`. La migrazione è transazionale e non modifica le tabelle di altre applicazioni. Se esistono già oggetti `sw_*`, fermarsi e controllare lo schema prima di ripeterla.
+1. Nel SQL Editor del progetto eseguire **una sola volta** `supabase/001_sharework.sql`, poi `supabase/003_project_documents.sql`. Le migrazioni sono transazionali e preservano gli eventuali documenti della prima versione. Se esistono già oggetti `sw_*`, controllare quali migrazioni risultano applicate prima di ripeterle.
 2. In Authentication abilitare Email, registrazioni e conferma email. Lasciare disabilitato l'accesso anonimo.
 3. Configurare un proprio SMTP per inviti, conferma email e recupero password. Il servizio di prova Supabase non è adatto agli utenti esterni al team del progetto.
 4. In URL Configuration impostare il dominio definitivo come Site URL e aggiungerlo agli URL di redirect consentiti, includendo il percorso esatto dell'app.
