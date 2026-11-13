@@ -1,11 +1,11 @@
-import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=454db9f1047d';
-import {projectCover} from './cards.js?v=454db9f1047d';
-import {watchChanges} from './realtime.js?v=454db9f1047d';
-import * as api from './api.js?v=454db9f1047d';
-import {Viewer,loadPdf,marker,numberBadge} from './viewer.js?v=454db9f1047d';
-import {snapshot,grouped,clamp,annotationStrokes} from './model.js?v=454db9f1047d';
-import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,placeLaser,laserOnPage} from './ship-model.js?v=454db9f1047d';
-import {editShipPlan} from './ship-editor.js?v=454db9f1047d';
+import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=6fd7804e26b7';
+import {projectCover} from './cards.js?v=6fd7804e26b7';
+import {watchChanges} from './realtime.js?v=6fd7804e26b7';
+import * as api from './api.js?v=6fd7804e26b7';
+import {Viewer,loadPdf,marker,numberBadge} from './viewer.js?v=6fd7804e26b7';
+import {snapshot,grouped,clamp,annotationStrokes} from './model.js?v=6fd7804e26b7';
+import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,placeLaser,laserOnPage} from './ship-model.js?v=6fd7804e26b7';
+import {editShipPlan} from './ship-editor.js?v=6fd7804e26b7';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
 let stopRealtime=null,refreshTimer;
 let user,profile,projects=[],project,projectLevel,activeDocument,annotations=[],pdf,authMode='login',dialogClose=null,dialogOpen=false,polling=false,epoch=0;
@@ -417,7 +417,7 @@ $('notes-scope').onchange=()=>{
  localStorage.setItem('sw.all',all);
  refreshList();
 };
-function badge(a){const c=document.createElement('canvas');c.className='badge';c.width=c.height=70;const ctx=c.getContext('2d');ctx.scale(2,2);if(!annotationStrokes(a).length)marker(ctx,17.5,17.5,a.color,a.shape,a.number,12);else{ctx.strokeStyle=a.color;ctx.globalAlpha=a.opacity/100;ctx.lineWidth=10;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(6,17);ctx.lineTo(29,17);ctx.stroke();ctx.globalAlpha=1;numberBadge(ctx,18,17,a.number);}return c;}
+function badge(a){const c=document.createElement('canvas');c.className='badge';c.width=c.height=70;const ctx=c.getContext('2d');ctx.scale(2,2);if(a.kind==='note')marker(ctx,17.5,17.5,a.color,a.shape,a.number,12);else{ctx.strokeStyle=a.color;ctx.globalAlpha=a.opacity/100;ctx.lineWidth=10;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(6,17);ctx.lineTo(29,17);ctx.stroke();ctx.globalAlpha=1;numberBadge(ctx,18,17,a.number);}return c;}
 for(const id of filterIds) $(id).oninput=refreshList;
 $('notes-reset').onclick=()=>{
  all=false;localStorage.setItem('sw.all',all);

@@ -1,9 +1,9 @@
 import * as pdfjs from './vendor/build/pdf.mjs';
-import {normalized,segmentDistance,contrast,clamp,annotationStrokes} from './model.js?v=454db9f1047d';
+import {normalized,segmentDistance,contrast,clamp,annotationStrokes} from './model.js?v=6fd7804e26b7';
 pdfjs.GlobalWorkerOptions.workerSrc=new URL('./vendor/build/pdf.worker.mjs',import.meta.url).href;
 const vendor=new URL('./vendor/',import.meta.url).href;
 export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendor+'cmaps/',cMapPacked:true,standardFontDataUrl:vendor+'standard_fonts/',wasmUrl:vendor+'wasm/',iccUrl:vendor+'iccs/',isEvalSupported:false}).promise;}
-import {emojiSymbols} from './ship-model.js?v=454db9f1047d';
+import {emojiSymbols} from './ship-model.js?v=6fd7804e26b7';
 const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
 // Use the part of the viewport covered by the sheet, including height-fitted overviews.
@@ -65,10 +65,16 @@ function highlightGeometry(annotation,rect,points){
  const width=annotation.width*(annotation.projected?Math.min(rect.scale,1):rect.scale);
  const offset=annotation.projected?width/2+4:0;
  const pixels=points.map(([x,y])=>[rect.x+x*rect.w,rect.y+y*rect.h-offset]);
- const badge=pixels[Math.floor((pixels.length-1)/2)].slice();
- if(annotation.projected)badge[0]=(pixels[0][0]+pixels.at(-1)[0])/2;
- badge[1]-=Math.min(13,width/2)+8;
- return {width,pixels,badge};
+ return {width,pixels};
+}
+
+function markPosition(annotation,rect){
+ if(annotation.kind==='note')return [rect.x+annotation.x*rect.w,markerY(annotation,rect)];
+ const stroke=annotationStrokes(annotation)[0];
+ if(!stroke)return [rect.x+annotation.x*rect.w,markerY(annotation,rect)];
+ const {width,pixels}=highlightGeometry(annotation,rect,stroke);
+ const [x,y]=pixels[Math.floor((pixels.length-1)/2)];
+ return [annotation.projected?(pixels[0][0]+pixels.at(-1)[0])/2:x,y-Math.min(13,width/2)-8];
 }
 
 function markerY(annotation,rect){
@@ -145,13 +151,16 @@ export class Viewer{
  const marks=this.marks.filter(a=>a.page===this.pageNumber&&!a.deleted);
  for(const a of marks){
   if(a.id===this.areaDraft?.id)continue;
-  const strokes=annotationStrokes(a);
-  if(!strokes.length){marker(ov,r.x+a.x*r.w,markerY(a,r),a.color,a.shape,a.number);continue;}
-  for(const stroke of strokes){
-   const {width,pixels,badge}=highlightGeometry(a,r,stroke);
+  for(const stroke of annotationStrokes(a)){
+   const {width,pixels}=highlightGeometry(a,r,stroke);
    this.strokeLine(ov,pixels,a.color,width,a.opacity);
-   numberBadge(ov,...badge,a.number);
   }
+ }
+ for(const a of marks){
+  if(a.id===this.areaDraft?.id)continue;
+  const [x,y]=markPosition(a,r);
+  if(a.kind==='note')marker(ov,x,y,a.color,a.shape,a.number);
+  else numberBadge(ov,x,y,a.number);
  }
  if(this.areaDraft){
   const {strokes,color,width,opacity}=this.areaDraft;
@@ -188,23 +197,32 @@ export class Viewer{
  }
  async renderDetail(){const p=this.pdfPage,r=this.rect(),rev=this.revision;if(!p||!r)return;this.task?.cancel();const w=this.container.clientWidth,h=this.container.clientHeight,out=document.createElement('canvas');out.width=this.canvas.width;out.height=this.canvas.height;const ratio=this.ratio;try{const ctx=out.getContext('2d');this.task=p.render({canvasContext:ctx,viewport:p.getViewport({scale:r.scale}),transform:[ratio,0,0,ratio,r.x*ratio,r.y*ratio],background:'rgba(0,0,0,0)'});await this.task.promise;if(rev!==this.revision)return;this.detail={canvas:out,rect:r,w,h};this.draw(false);}catch(e){if(e.name!=='RenderingCancelledException')this.callbacks.error(e);}}
  down(e){if(!this.pdfPage)return;e.preventDefault();this.container.setPointerCapture(e.pointerId);const p=this.local(e);this.pointers.set(e.pointerId,p);if(this.pointers.size===1){this.start=p;this.last=p;this.moved=false;this.multi=false;const r=this.rect();if(this.mode==='area'&&p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h)this.stroke=[normalized(p.x,p.y,r)];}else{this.multi=true;this.stroke=null;const a=[...this.pointers.values()];this.distance=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);this.center={x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2};}}
- move(e){if(!this.pointers.has(e.pointerId))return;const p=this.local(e);this.pointers.set(e.pointerId,p);if(this.pointers.size>=2){const a=[...this.pointers.values()],distance=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y),center={x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2};if(this.distance>0)this.zoomAt(distance/this.distance,center.x,center.y);this.panX+=center.x-this.center.x;this.panY+=center.y-this.center.y;this.distance=distance;this.center=center;this.draw();return;}this.moved||=Math.hypot(p.x-this.start.x,p.y-this.start.y)>3;if(this.stroke){if(this.stroke.length<20000)this.stroke.push(normalized(p.x,p.y,this.rect()));this.draw(false);}else if(!this.mode||this.multi){this.panX+=p.x-this.last.x;this.panY+=p.y-this.last.y;this.draw();}this.last=p;}
- up(e){if(!this.pointers.has(e.pointerId))return;const p=this.local(e);this.pointers.delete(e.pointerId);if(this.pointers.size){this.last=[...this.pointers.values()][0];return;}if(!this.multi){if(this.stroke&&this.moved){const points=this.stroke;this.stroke=null;this.callbacks.stroke?.(points);}else if(!this.moved&&!this.areaDraft){const r=this.rect();if(this.pick){if(p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h)this.pick(normalized(p.x,p.y,r));this.draw(false);return;}if(this.laser&&p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h){this.callbacks.laser?.(normalized(p.x,p.y,r));return;}const hit=this.hit(p.x,p.y);if(hit.length)this.callbacks.edit(hit);else if(this.mode==='note'){const r=this.rect();if(p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h){const [x,y]=normalized(p.x,p.y,r);this.callbacks.create({kind:'note',x,y,...this.settings.note,points:[],width:18,opacity:100});}}}}this.stroke=null;this.draw(false);}
- hit(x,y){
+ move(e){if(!this.pointers.has(e.pointerId))return;const p=this.local(e);this.pointers.set(e.pointerId,p);if(this.pointers.size>=2){const a=[...this.pointers.values()],distance=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y),center={x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2};if(this.distance>0)this.zoomAt(distance/this.distance,center.x,center.y);this.panX+=center.x-this.center.x;this.panY+=center.y-this.center.y;this.distance=distance;this.center=center;this.draw();return;}this.moved||=Math.hypot(p.x-this.start.x,p.y-this.start.y)>(this.areaDraft||e.pointerType!=='touch'?3:12);if(this.stroke){if(this.stroke.length<20000)this.stroke.push(normalized(p.x,p.y,this.rect()));this.draw(false);}else if((!this.mode||this.multi)&&this.moved){this.panX+=p.x-this.last.x;this.panY+=p.y-this.last.y;this.draw();}if(this.moved||this.stroke)this.last=p;}
+ up(e){if(!this.pointers.has(e.pointerId))return;const p=this.local(e);this.pointers.delete(e.pointerId);if(this.pointers.size){this.last=[...this.pointers.values()][0];return;}if(!this.multi){if(this.stroke&&this.moved){const points=this.stroke;this.stroke=null;this.callbacks.stroke?.(points);}else if(!this.moved&&!this.areaDraft){const r=this.rect();if(this.pick){if(p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h)this.pick(normalized(p.x,p.y,r));this.draw(false);return;}if(this.laser&&p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h){this.callbacks.laser?.(normalized(p.x,p.y,r));return;}const hit=this.hit(p.x,p.y,e.pointerType);if(hit.length)this.callbacks.edit(hit);else if(this.mode==='note'){const r=this.rect();if(p.x>=r.x&&p.y>=r.y&&p.x<=r.x+r.w&&p.y<=r.y+r.h){const [x,y]=normalized(p.x,p.y,r);this.callbacks.create({kind:'note',x,y,...this.settings.note,points:[],width:18,opacity:100});}}}}this.stroke=null;this.draw(false);}
+ hit(x,y,pointerType){
   const rect=this.rect();
-  if(!rect||x<rect.x||x>rect.x+rect.w||y<rect.y||y>rect.y+rect.h)return [];
+  if(!rect)return [];
   const padding=selectionPadding(rect,this.container.clientWidth,this.container.clientHeight);
-  return this.marks.filter(a=>{
-   if(a.page!==this.pageNumber||a.deleted)return false;
-   const strokes=annotationStrokes(a);
-   if(!strokes.length)return Math.hypot(x-rect.x-a.x*rect.w,y-markerY(a,rect))<=markerRadius+padding;
-   return strokes.some(stroke=>{
-    const {width,pixels,badge}=highlightGeometry(a,rect,stroke);
-    if(a.number!=null&&Math.abs(x-badge[0])<=Math.max(11,String(a.number).length*3+5)+padding&&Math.abs(y-badge[1])<=7+padding)return true;
-    const tolerance=width/2+padding;
-    if(pixels.length===1)return Math.hypot(x-pixels[0][0],y-pixels[0][1])<=tolerance;
-    return pixels.some((point,i)=>i>0&&segmentDistance(x,y,...pixels[i-1],...point)<=tolerance);
-   });
-  }).reverse();
+  const touchAllowance=pointerType==='touch'?12:0;
+  const candidates=[];
+  for(const a of this.marks){
+   if(a.page!==this.pageNumber||a.deleted)continue;
+   const [mx,my]=markPosition(a,rect);
+   let distance=Math.hypot(x-mx,y-my)-(a.kind==='note'?markerRadius:10);
+   for(const stroke of annotationStrokes(a)){
+    const {width,pixels}=highlightGeometry(a,rect,stroke);
+    let strokeDistance=Math.hypot(x-pixels[0][0],y-pixels[0][1]);
+    for(let i=1;i<pixels.length;i++){
+     strokeDistance=Math.min(strokeDistance,segmentDistance(x,y,...pixels[i-1],...pixels[i]));
+    }
+    distance=Math.min(distance,strokeDistance-width/2);
+   }
+   candidates.push({annotation:a,distance});
+  }
+  // Include neighbors around a directly hit mark without changing the zoom.
+  const direct=candidates.some(item=>item.distance<=touchAllowance);
+  const radius=padding+touchAllowance+(direct?Math.min(32,padding/2):0);
+  return candidates.filter(item=>item.distance<=radius)
+   .sort((a,b)=>a.distance-b.distance).map(item=>item.annotation);
  }
 }
