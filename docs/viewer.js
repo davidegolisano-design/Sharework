@@ -1,9 +1,9 @@
 import * as pdfjs from './vendor/build/pdf.mjs';
-import {normalized,segmentDistance,contrast,clamp,annotationStrokes,expandOverlappingMarkers} from './model.js?v=ec4dcd35266b';
+import {normalized,segmentDistance,contrast,clamp,annotationStrokes,expandOverlappingMarkers} from './model.js?v=17d96b2f795f';
 pdfjs.GlobalWorkerOptions.workerSrc=new URL('./vendor/build/pdf.worker.mjs',import.meta.url).href;
 const vendor=new URL('./vendor/',import.meta.url).href;
 export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendor+'cmaps/',cMapPacked:true,standardFontDataUrl:vendor+'standard_fonts/',wasmUrl:vendor+'wasm/',iccUrl:vendor+'iccs/',isEvalSupported:false}).promise;}
-import {emojiSymbols} from './ship-model.js?v=ec4dcd35266b';
+import {emojiSymbols} from './ship-model.js?v=17d96b2f795f';
 const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
 // Use the part of the viewport covered by the sheet, including height-fitted overviews.
@@ -120,7 +120,7 @@ function drawLaser(ctx, rect, laser) {
 }
 
 export class Viewer{
- constructor(container,canvas,overlay,callbacks){Object.assign(this,{container,canvas,overlay,callbacks,zoom:1,panX:0,panY:0,mode:null,marks:[],pageNumber:1,pointers:new Map(),settings:{note:{color:'#ef5350',shape:'circle'},highlight:{color:'#e9b824',width:18,opacity:35}},revision:0});this.resize=new ResizeObserver(()=>this.draw());this.resize.observe(container);container.addEventListener('pointerdown',e=>this.down(e));container.addEventListener('pointermove',e=>this.move(e));container.addEventListener('pointerup',e=>this.up(e));container.addEventListener('pointercancel',e=>this.cancelPointer(e));container.addEventListener('lostpointercapture',e=>this.cancelPointer(e));container.addEventListener('wheel',e=>{e.preventDefault();const p=this.local(e);this.zoomAt(Math.exp(-e.deltaY*.002),p.x,p.y);},{passive:false});}
+ constructor(container,canvas,overlay,callbacks){Object.assign(this,{container,canvas,overlay,callbacks,zoom:1,panX:0,panY:0,mode:null,marks:[],pageNumber:1,pointers:new Map(),settings:{note:{color:'#ef5350',shape:'circle'},highlight:{color:'#e9b824',width:18,opacity:35}},revision:0});this.resize=new ResizeObserver(()=>this.draw());this.resize.observe(container);window.addEventListener('blur',()=>this.resetGesture());container.addEventListener('pointerdown',e=>this.down(e));container.addEventListener('pointermove',e=>this.move(e));container.addEventListener('pointerup',e=>this.up(e));container.addEventListener('pointercancel',e=>this.cancelPointer(e));container.addEventListener('lostpointercapture',e=>this.cancelPointer(e));container.addEventListener('wheel',e=>{e.preventDefault();const p=this.local(e);this.zoomAt(Math.exp(-e.deltaY*.002),p.x,p.y);},{passive:false});}
  local(e){
   const bounds=this.container.getBoundingClientRect();
   return {
@@ -129,8 +129,8 @@ export class Viewer{
   };
  }
  async open(pdf,page=1){this.clear();this.pdf=pdf;await this.page(page);}
- clear(){this.pageRequest=(this.pageRequest||0)+1;this.revision++;clearTimeout(this.timer);this.task?.cancel();this.pdf=null;this.pdfPage=null;this.detail=null;this.marks=[];this.areaDraft=null;this.laser=null;this.pick=null;this.guides=[];this.mode=null;this.stroke=null;this.pointers.clear();this.draw();}
- async page(n){if(!this.pdf)return;const request=this.pageRequest=(this.pageRequest||0)+1;this.revision++;this.task?.cancel();clearTimeout(this.timer);const p=await this.pdf.getPage(n);if(request!==this.pageRequest)return;this.task?.cancel();this.pdfPage=p;this.pageNumber=n;this.zoom=1;this.minZoom=1;this.panX=this.panY=0;this.detail=null;this.draw();}
+ clear(){this.pageRequest=(this.pageRequest||0)+1;this.revision++;clearTimeout(this.timer);this.task?.cancel();this.pdf=null;this.pdfPage=null;this.detail=null;this.marks=[];this.areaDraft=null;this.laser=null;this.pick=null;this.guides=[];this.mode=null;this.resetGesture(false);this.draw();}
+ async page(n){if(!this.pdf)return;const request=this.pageRequest=(this.pageRequest||0)+1;this.revision++;this.task?.cancel();clearTimeout(this.timer);const p=await this.pdf.getPage(n);if(request!==this.pageRequest)return;this.task?.cancel();this.resetGesture(false);this.pdfPage=p;this.pageNumber=n;this.zoom=1;this.minZoom=1;this.panX=this.panY=0;this.detail=null;this.draw();}
  rect(){if(!this.pdfPage)return null;const v=this.pdfPage.getViewport({scale:1}),w=this.container.clientWidth,h=this.container.clientHeight;const scale=Math.max(.0001,Math.min((w-24)/v.width,(h-24)/v.height))*this.zoom;return {x:(w-v.width*scale)/2+this.panX,y:(h-v.height*scale)/2+this.panY,w:v.width*scale,h:v.height*scale,scale};}
  viewCenter(visibleWidth=this.container.clientWidth){
   const rect=this.rect();
@@ -213,6 +213,19 @@ export class Viewer{
   ctx.restore();
  }
  async renderDetail(){const p=this.pdfPage,r=this.rect(),rev=this.revision;if(!p||!r)return;this.task?.cancel();const w=this.container.clientWidth,h=this.container.clientHeight,out=document.createElement('canvas');out.width=this.canvas.width;out.height=this.canvas.height;const ratio=this.ratio;try{const ctx=out.getContext('2d');this.task=p.render({canvasContext:ctx,viewport:p.getViewport({scale:r.scale}),transform:[ratio,0,0,ratio,r.x*ratio,r.y*ratio],background:'rgba(0,0,0,0)'});await this.task.promise;if(rev!==this.revision)return;this.detail={canvas:out,rect:r,w,h};this.draw(false);}catch(e){if(e.name!=='RenderingCancelledException')this.callbacks.error(e);}}
+ resetGesture(redraw=true){
+  this.pointers.clear();
+  this.pinch=null;
+  this.stroke=null;
+  this.moved=this.multi=false;
+  if(redraw)this.draw(false);
+ }
+
+ beginPinch(){
+  const midpoint=this.pinchState();
+  this.pinch=midpoint&&{...midpoint,zoom:this.zoom,panX:this.panX,panY:this.panY};
+ }
+
  pinchState(){
   const [first,second]=this.pointers.values();
   if(!second)return null;
@@ -226,13 +239,16 @@ export class Viewer{
  down(e){
   if(!this.pdfPage)return;
   e.preventDefault();
+  // A primary contact starts a new touch stream, even if a WebView lost an
+  // up/cancel event from the previous pinch.
+  if(e.isPrimary&&this.pointers.size)this.resetGesture();
   this.container.setPointerCapture(e.pointerId);
   const point=this.local(e);
   this.pointers.set(e.pointerId,point);
   if(this.pointers.size>1){
    this.multi=true;
    this.stroke=null;
-   this.pinch=this.pinchState();
+   if(this.pointers.size===2)this.beginPinch();
    return;
   }
   this.start=this.last=point;
@@ -251,18 +267,19 @@ export class Viewer{
   const point=this.local(e);
   this.pointers.set(e.pointerId,point);
   if(this.pointers.size>=2){
-   const next=this.pinchState(),previous=this.pinch;
-   if(previous?.distance>0&&next.distance>0){
-    // Anchor the scale at the old midpoint, then follow the fingers' translation.
-    const zoom=Math.max(this.minZoom??1,this.zoom*next.distance/previous.distance);
-    const ratio=zoom/this.zoom;
+   const next=this.pinchState(),start=this.pinch;
+   if(!start?.distance){
+    this.beginPinch();
+   }else if(next.distance>0){
+    // Derive the transform from the start of the gesture, including at the zoom limit.
+    const zoom=Math.max(this.minZoom??1,start.zoom*next.distance/start.distance);
+    const ratio=zoom/start.zoom;
     const centerX=this.container.clientWidth/2,centerY=this.container.clientHeight/2;
-    this.panX=(this.panX+centerX-previous.x)*ratio+next.x-centerX;
-    this.panY=(this.panY+centerY-previous.y)*ratio+next.y-centerY;
+    this.panX=(start.panX+centerX-start.x)*ratio+next.x-centerX;
+    this.panY=(start.panY+centerY-start.y)*ratio+next.y-centerY;
     this.zoom=zoom;
     this.draw();
    }
-   this.pinch=next;
    return;
   }
   this.moved||=Math.hypot(point.x-this.start.x,point.y-this.start.y)>(this.areaDraft||e.pointerType!=='touch'?3:12);
@@ -279,16 +296,14 @@ export class Viewer{
 
  releasePointer(id){
   if(!this.pointers.delete(id))return false;
-  this.pinch=this.pinchState();
+  this.beginPinch();
   if(this.pointers.size)this.start=this.last=this.pointers.values().next().value;
   return true;
  }
 
  cancelPointer(e){
-  if(!this.releasePointer(e.pointerId))return;
-  this.multi=true;
-  this.stroke=null;
-  this.draw(false);
+  if(!this.pointers.has(e.pointerId))return;
+  this.resetGesture();
  }
 
  up(e){
