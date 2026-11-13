@@ -6,6 +6,7 @@ test('Database permissions, approval, authorship, numbering and private files',a
  const admin='00000000-0000-0000-0000-000000000001',a='00000000-0000-0000-0000-000000000002',b='00000000-0000-0000-0000-000000000003',pending='00000000-0000-0000-0000-000000000004';
  for(const [id,name,email]of [[admin,'Amministratore Test','admin@example.test'],[a,'Mario Rossi','mario@example.test'],[b,'Anna Verdi','anna@example.test'],[pending,'Ospite','guest@example.test']])await db.query(`insert into auth.users values($1,$2,now(),$3)`,[id,email,JSON.stringify({full_name:name,approved:true,role:'admin'})]);
  await db.exec((await readFile('supabase/002_first_admin.sql','utf8')).replace('replace-with-admin-email@example.com','admin@example.test'));
+ await db.exec(await readFile('supabase/005_ship_plans_roles.sql','utf8'));
  async function as(id){await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id||'']);await db.exec('set role '+(id?'authenticated':'anon'));}
  await as(admin);await db.query('select public.sw_set_approval($1,true)',[a]);await db.query('select public.sw_set_approval($1,true)',[b]);
  await as(a);const [p]=(await db.query(`insert into sw_projects(title,created_by) values('Docking',$1) returning *`,[admin])).rows;assert.equal(p.created_by,a);
@@ -31,5 +32,32 @@ test('Database permissions, approval, authorship, numbering and private files',a
  await assert.rejects(db.query(`insert into storage.objects(bucket_id,name) values('sharework-pdfs',$1)`,[pending+'/secret.pdf']));
  await as(null);await assert.rejects(db.query('select * from sw_annotations'));
  await as(admin);await db.query('select public.sw_set_approval($1,false)',[b]);await as(b);assert.equal((await db.query('select * from sw_projects')).rows.length,0);
+
+ const chart={page:1,frame0:0,frame1:74,x0:.1,x1:.8,meters:51.06};
+ const shipPlan=JSON.stringify({overview:chart,decks:[{...chart,page:2,base:.5,name:'Ponte 2'}]});
+ await as(admin);
+ await db.query("select sw_set_role($1,'admin')",[a]);
+ await db.query("select sw_set_role($1,'viewer')",[b]);
+ await db.query('select sw_set_approval($1,true)',[b]);
+ await assert.rejects(db.query("select sw_set_role($1,'viewer')",[admin]));
+ await as(a);
+ await assert.rejects(db.query("select sw_set_role($1,'member')",[b]));
+ await assert.rejects(db.query('select sw_set_approval($1,true)',[pending]));
+ await assert.rejects(db.query("update sw_documents set ship_plan='{}' where id=$1",[doc.id]));
+ await db.query("update sw_documents set ship_plan=$2 where id=$1",[doc.id,shipPlan]);
+ await assert.rejects(db.query("insert into sw_annotations(project_id,document_id,page,kind) values($1,$2,1,'note')",[p.id,doc.id]));
+ const marker=(await db.query("insert into sw_annotations(project_id,document_id,page,kind,shape) values($1,$2,2,'note','flame') returning *",[p.id,doc.id])).rows[0];
+ assert.equal(marker.shape,'flame');
+ await as(b);
+ assert.equal((await db.query('select count(*)::int as count from sw_documents')).rows[0].count,2);
+ await assert.rejects(db.query("insert into sw_annotations(project_id,document_id,page,kind) values($1,$2,2,'note')",[p.id,doc.id]));
+ await assert.rejects(db.query("insert into storage.objects(bucket_id,name) values('sharework-pdfs',$1)",[b+'/read-only.pdf']));
+ assert.equal((await db.query("update sw_annotations set title='viewer' where id=$1 returning id",[marker.id])).rows.length,0);
+ await as(admin);
+ await db.query("select sw_set_role($1,'member')",[a]);
+ await as(a);
+ await assert.rejects(db.query('update sw_documents set ship_plan=null where id=$1',[doc.id]));
+ await db.query("update sw_annotations set shape='electric' where id=$1",[marker.id]);
+ await assert.rejects(db.query("insert into sw_documents(project_id,title,file_path,file_name,page_count,ship_plan) values($1,'Bypass',$2,'bypass.pdf',2,$3)",[p.id,a+'/bypass.pdf',shipPlan]));
  await db.close();
 });

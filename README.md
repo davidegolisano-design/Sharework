@@ -1,20 +1,20 @@
 # Sharework
 
-Web app per progetti PDF condivisi, con registrazione, accesso e approvazione dell'amministratore. Tutti gli utenti approvati vedono tutti i progetti. Nessun documento è accessibile senza autenticazione e approvazione.
+Web app per progetti PDF condivisi, con registrazione, accesso e approvazione del super admin. Tutti gli utenti approvati vedono tutti i progetti. Nessun documento è accessibile senza autenticazione e approvazione.
 
 ## Funzioni
 
 - Elenco progetti dopo l'accesso; ogni progetto contiene uno o più documenti PDF.
 - Importazione PDF (massimo 50 MB per file) in Supabase Storage privato.
-- Note numerate per progetto, quattro forme, tavolozza colori.
+- Note numerate per progetto, forme e icone (fiamma, attenzione, elettrico, attrezzatura), tavolozza colori.
 - Evidenziatore libero con spessore in coordinate PDF e trasparenza.
 - Titolo e descrizione salvati automaticamente, nome autore e data assegnati dal database.
 - Zoom con rendering della zona visibile, pannelli riducibili e ridimensionabili.
-- Filtro Pagina/Tutte con separatori; selettore rapido delle pagine.
+- Ricerca nelle note e filtri per pagina o ponte, simbolo, autore e data.
 - Annulla/Ripeti e controllo versione per rilevare modifiche concorrenti.
 - Aggiornamenti tramite Supabase Realtime di progetti, documenti, annotazioni e approvazioni. Recupero periodico ogni 10 secondi in caso di eventi persi. Durante una finestra di modifica gli aggiornamenti vengono rimandati alla chiusura per proteggere il testo in lavorazione.
 - PWA installabile da Edge/Chrome su PC, con finestra autonoma. Richiede Internet.
-- Area amministratore per approvare e disabilitare utenti.
+- Super admin per approvare account e assegnare ruoli. Gli admin configurano i Piani nave, gli utenti caricano PDF e modificano le annotazioni, i visualizzatori consultano in sola lettura.
 
 ## Avvio
 
@@ -37,9 +37,16 @@ L'anteprima usa `http://127.0.0.1:4173`. `dist` è il sito statico da pubblicare
 4. In URL Configuration impostare il dominio definitivo come Site URL e aggiungerlo agli URL di redirect consentiti, includendo il percorso esatto dell'app.
 5. Registrare il primo amministratore dall'app e confermare la sua email.
 6. In `002_first_admin.sql` sostituire il segnaposto con l'email dell'amministratore e eseguirlo nel SQL Editor. Il controllo richiede email confermata. Non pubblicare una versione compilata con credenziali amministrative.
-7. I nuovi utenti rimangono in attesa: l'amministratore li abilita dalla pagina Utenti. La registrazione da sola non concede accesso ai documenti.
+7. Eseguire `supabase/005_ship_plans_roles.sql` una volta. Gli amministratori già approvati diventano super admin. Per una nuova installazione completare il passaggio 6 prima di questa migrazione.
+8. Il super admin abilita i nuovi utenti e ne assegna il ruolo dalla pagina Utenti.
 
 `src/config.js` contiene l'URL e la sola chiave pubblica/publishable, utilizzabile nel browser. Non inserire `service_role`, secret key o password nel repository. Tutte le autorizzazioni sono applicate anche nel database e nello Storage; il nome autore non dipende dal contenuto inviato dal browser.
+
+## Piani nave
+
+Aprire un PDF multipagina come Admin o Super admin e scegliere **Piani nave**. Selezionare la pagina longitudinale, indicare due ordinate e la distanza fra loro, quindi posizionare i riferimenti sul disegno. Aggiungere i ponti, scegliere le pagine, nominarli e regolare l'ordine di navigazione. Per ogni ponte, indicare di nuovo i due riferimenti usando la stessa ordinata di origine e posizionare la base del ponte sulla pagina longitudinale.
+
+Nei Piani nave la General Overview è la vista iniziale. Le nuove annotazioni si inseriscono sulle pagine dei ponti. In Overview si possono aprire e modificare le annotazioni esistenti secondo i permessi dell'account. Le note sono proiettate appena sopra la linea di base. Le evidenziazioni sono rappresentate da un simbolo alla posizione longitudinale media del tratto.
 
 ## Pubblicazione GitHub Pages
 
@@ -55,7 +62,7 @@ Il sito pubblico mostra solo l'accesso. I PDF non si trovano nel repository o ne
 
 `pnpm test` esegue veri test SQL su PostgreSQL locale tramite PGlite, con ruoli e Row Level Security: accesso negato ai non approvati, impossibilità di auto-approvazione, identità autore non falsificabile, numerazione, controllo versione e file privati. PGlite simula le tabelle Auth/Storage necessarie; non sostituisce il collaudo dei servizi Auth/Storage sul progetto Supabase reale.
 
-La build e i test non eseguono la migrazione sul progetto remoto. Prima dell'uso operativo collaudare con due account: registrazione/conferma, approvazione, importazione PDF, modifiche concorrenti, revoca accesso e recupero password. Il primo amministratore deve usare un indirizzo di cui controlla la casella.
+Su un'installazione esistente applicare `005_ship_plans_roles.sql` a Supabase prima di pubblicare questa release web. Prima dell'uso operativo collaudare con due account: registrazione/conferma, approvazione, importazione PDF, modifiche concorrenti, revoca accesso e recupero password. Il primo amministratore deve usare un indirizzo di cui controlla la casella.
 
 La versione web richiede Internet; non importa automaticamente i progetti locali dell'APK. Le annotazioni restano separate dal PDF originale. L'autore indica l'account e il nome dichiarato alla registrazione, non una firma digitale. Una revoca blocca le letture successive, ma non può ritirare copie di file già scaricate. Il piano Free non include backup automatici: predisporre copie periodiche di database e file prima dell'uso operativo.
 
