@@ -1,4 +1,5 @@
 const english = {
+ "Tocca la tavola per spostare il riferimento laser":"Tap the drawing to move the laser reference",
  "Mostra note":"Show notes",
  "Ponte attuale":"Current deck",
  "Piani nave condivisi": "Shared ship plans",

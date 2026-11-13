@@ -24,6 +24,25 @@ export function mapDeckView(source, target, view) {
   };
 }
 
+export function placeLaser(plan, page, point, previous = null) {
+  const overview = plan.overview;
+  const sheet = page === overview.page ? overview : plan.decks.find(deck => deck.page === page);
+  if (!sheet) return null;
+  return {
+    x: mapDeckView(sheet, overview, {x:point[0],width:1}).x,
+    y: sheet === overview ? previous?.y ?? .5 : point[1]
+  };
+}
+
+export function laserOnPage(plan, page, laser) {
+  const overview = plan.overview;
+  if (page === overview.page) return {...laser, vertical:true};
+  const deck = plan.decks.find(sheet => sheet.page === page);
+  if (!deck) return null;
+  const {x} = mapDeckView(overview, deck, {x:laser.x,width:1});
+  return {x,y:laser.y,vertical:false};
+}
+
 export function projectMarks(plan, annotations) {
   const {overview, decks} = plan;
   const byPage = new Map(decks.map(deck => [deck.page, deck]));

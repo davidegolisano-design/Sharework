@@ -4,7 +4,7 @@ import {watchChanges} from './realtime.js';
 import * as api from './api.js';
 import {Viewer,loadPdf,marker} from './viewer.js';
 import {snapshot,grouped,clamp} from './model.js';
-import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView} from './ship-model.js';
+import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,placeLaser,laserOnPage} from './ship-model.js';
 import {editShipPlan} from './ship-editor.js';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
 let stopRealtime=null,refreshTimer;
@@ -22,7 +22,8 @@ const phoneLayout=matchMedia('(max-width:600px), (orientation:landscape) and (ma
 const filterIds = ['notes-query','notes-page','notes-kind','notes-author','notes-day'];
 let finishPick = null;
 let lastDeckView = null;
-const viewer=new Viewer($('viewport'),$('pdf-canvas'),$('marks-canvas'),{create:a=>makeAnnotation(a).catch(report),edit:a=>openMarker(a).catch(report),error:report});
+let laser = null;
+const viewer=new Viewer($('viewport'),$('pdf-canvas'),$('marks-canvas'),{create:a=>makeAnnotation(a).catch(report),edit:a=>openMarker(a).catch(report),error:report,laser:setLaserPoint});
 const setupViewer=new Viewer($('setup-viewport'),$('setup-pdf'),$('setup-marks'),{error:report});
 let setupPdf,closeSetup,setupLoading=false;
 $('setup-fit').onclick=()=>setupViewer.fit();
@@ -73,7 +74,7 @@ function toast(message){$('toast').textContent=message;$('toast').hidden=false;c
 function screen(name){screens.forEach(id=>$(id).hidden=id!==name);}
 function status(value){$('sync-state').textContent=value;}
 function date(value){return new Date(value).toLocaleString(locale(),{dateStyle:'short',timeStyle:'short'});}
-function mode(value){if(phoneLayout.matches)$('mobile-tools').open=false;viewer.mode=canPlace()&&!finishPick&&viewer.mode!==value?value:null;$('note-tool').classList.toggle('active',viewer.mode==='note');$('highlight-tool').classList.toggle('active',viewer.mode==='highlight');}
+function mode(value){if(value&&laser){laser=null;refreshLaser();}if(phoneLayout.matches)$('mobile-tools').open=false;viewer.mode=canPlace()&&!finishPick&&viewer.mode!==value?value:null;$('note-tool').classList.toggle('active',viewer.mode==='note');$('highlight-tool').classList.toggle('active',viewer.mode==='highlight');}
 function modal(title,onClose=null){if($('dialog').open)throw Error(tr('Chiudi prima la finestra aperta.'));dialogOpen=true;dialogClose=onClose;$('dialog-title').textContent=title;$('dialog-body').replaceChildren();$('dialog-footer').replaceChildren();$('dialog').showModal();return $('dialog-body');}
 async function closeModal(){if(dialogClose&&await dialogClose()===false)return;dialogClose=null;dialogOpen=false;$('dialog').close();queueRefresh();}
 $('dialog-close').onclick=()=>closeModal().catch(report);$('dialog').addEventListener('cancel',e=>{e.preventDefault();closeModal().catch(report);});$('dialog-form').onsubmit=e=>e.preventDefault();
@@ -265,11 +266,36 @@ function uploadShipPlan(previous){
  $('dialog-footer').append(submit);
 }
 
-async function openDocument(p){lastDeckView=null;const token=++epoch;loading=true;activeDocument=p;annotations=[];undo=[];redo=[];viewer.clear();screen('workspace');$('document-title').textContent=p.title;status(tr('Apertura…'));applyPanel();try{const [blob,rows]=await Promise.all([api.pdfDownload(p.file_path),api.table('sw_annotations','document_id=eq.'+p.id+'&select=*&order=created_at.asc')]);if(token!==epoch)return;await pdf?.destroy();pdf=await loadPdf(new Uint8Array(await blob.arrayBuffer()));if(token!==epoch){await pdf.destroy();return;}annotations=rows;await viewer.open(pdf,plan()?.overview.page||1);
+async function openDocument(p){lastDeckView=null;laser=null;const token=++epoch;loading=true;activeDocument=p;annotations=[];undo=[];redo=[];viewer.clear();screen('workspace');$('document-title').textContent=p.title;status(tr('Apertura…'));applyPanel();try{const [blob,rows]=await Promise.all([api.pdfDownload(p.file_path),api.table('sw_annotations','document_id=eq.'+p.id+'&select=*&order=created_at.asc')]);if(token!==epoch)return;await pdf?.destroy();pdf=await loadPdf(new Uint8Array(await blob.arrayBuffer()));if(token!==epoch){await pdf.destroy();return;}annotations=rows;await viewer.open(pdf,plan()?.overview.page||1);
 for(const id of filterIds) $(id).value='';
 if(phoneLayout.matches){panelHidden=true;applyPanel();}
 if(isOverview())viewer.centerView(.5,.5,{visibleWidth:visiblePlanWidth(),fitHeight:true});
 refreshList();status('');}finally{loading=false;}}
+function refreshLaser(draw=true){
+ const ship=plan();
+ viewer.laser=ship&&laser?laserOnPage(ship,viewer.pageNumber,laser):null;
+ $('laser-view').setAttribute('aria-pressed',String(Boolean(laser)));
+ $('viewport').classList.toggle('laser-active',Boolean(viewer.laser));
+ if(draw)viewer.draw(false);
+}
+
+function setLaserPoint(point){
+ if(!laser||!plan()||loading||finishPick)return;
+ laser=placeLaser(plan(),viewer.pageNumber,point,laser);
+ refreshLaser();
+}
+
+$('laser-view').onclick=()=>{
+ if(!plan()||loading||finishPick)return;
+ if(laser)laser=null;
+ else{
+  const view=viewer.viewCenter(visiblePlanWidth());
+  if(!view)return;
+  mode(null);
+  laser=placeLaser(plan(),viewer.pageNumber,[clamp(view.x,0,1),clamp(view.y,0,1)]);
+ }
+ refreshLaser();
+};
 function visiblePlanWidth(){
  const viewport=$('viewport').getBoundingClientRect();
  const panel=$('notes-panel').getBoundingClientRect();
@@ -292,12 +318,14 @@ async function page(n,{keepPosition=false}={}){
   await viewer.page(n);
   if(viewer.pageNumber!==n)return;
   const visibleWidth=visiblePlanWidth();
+  const beam=keepPosition&&laser&&target?laserOnPage(ship,n,laser):null;
+  const beamVisible=beam?.x>=0&&beam?.x<=1;
   if(target&&target===overview){
-   viewer.centerView(mapped?clamp(mapped.x,0,1):.5,.5,{visibleWidth,fitHeight:true});
+   viewer.centerView(beamVisible?beam.x:mapped?clamp(mapped.x,0,1):.5,.5,{visibleWidth,fitHeight:true});
   }else if(mapped){
    const deckView=lastDeckView;
    const width=deckView?deckView.pixelsPerMeter/Math.abs(longitudinalScale(target)):undefined;
-   viewer.centerView(clamp(mapped.x,0,1),clamp(deckView?.y??.5,0,1),{visibleWidth,width});
+   viewer.centerView(beamVisible?beam.x:clamp(mapped.x,0,1),beamVisible?beam.y:clamp(deckView?.y??.5,0,1),{visibleWidth,width});
   }
   refreshList();
  }finally{loading=false;}
@@ -316,6 +344,8 @@ function selectOptions(select,options){
 
 function updatePages(){
  const current=viewer.pageNumber;
+ $('laser-view').hidden=!plan();
+ $('laser-view').disabled=!!finishPick;
  const writable=canWrite();
  $('mobile-tools').hidden=!writable;
  for(const el of document.querySelectorAll('#toolbar .tool-group,#undo,#redo'))el.hidden=!writable;
@@ -395,6 +425,7 @@ function refreshList(){
  const filtered=filterNotes(annotations,{query,page:pageFilter,kind,author,day});
  const projected=overview?projectMarks(plan(),filtered):[];
  const marks=overview?[...filtered.filter(a=>a.page===viewer.pageNumber),...projected]:filtered;
+ refreshLaser(false);
  viewer.setMarks(marks);
  const projectedIds=new Set(projected.map(a=>a.id));
  const showAll=all||!!pageFilter;

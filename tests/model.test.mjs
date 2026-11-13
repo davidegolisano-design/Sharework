@@ -6,7 +6,7 @@ test('Grouping, normalized coordinates and hit detection',()=>{
 });
 
 
-import {filterNotes,projectMarks,shipPageOrder,mapDeckView,longitudinalScale} from '../src/ship-model.js';
+import {filterNotes,projectMarks,shipPageOrder,mapDeckView,longitudinalScale,placeLaser,laserOnPage} from '../src/ship-model.js';
 
 test('Ship plans project a shared frame across scales and orientations',()=>{
  const overview={page:1,frame0:0,frame1:74,x0:.2,x1:.6,meters:51.06};
@@ -35,4 +35,20 @@ test('Deck switching preserves frame and screen scale across different page layo
  const back=mapDeckView(reversed,aft,{x:next.x,width});
  assert.ok(Math.abs(back.x-from.x)<1e-9);
  assert.ok(Math.abs(back.pixelsPerMeter-next.pixelsPerMeter)<1e-9);
+});
+
+test('Laser follows the same ordinate across the overview and calibrated decks',()=>{
+ const overview={page:1,x0:.2,x1:.6,frame0:0,frame1:74,meters:51.06};
+ const deck={page:2,x0:.75,x1:.25,frame0:0,frame1:37,meters:25.53};
+ const plan={overview,decks:[deck]};
+ const laser=placeLaser(plan,2,[.5,.7]);
+ assert.ok(Math.abs(laser.x-.3)<1e-9);
+ assert.deepEqual(laserOnPage(plan,1,laser),{...laser,vertical:true});
+ const marker=laserOnPage(plan,2,laser);
+ assert.ok(Math.abs(marker.x-.5)<1e-9);
+ assert.equal(marker.y,.7);
+ assert.equal(marker.vertical,false);
+ assert.equal(placeLaser(plan,1,[.5,.25],laser).y,.7);
+ assert.equal(placeLaser(plan,1,[.5,.25]).y,.5);
+ assert.equal(laserOnPage(plan,3,laser),null);
 });
