@@ -2,7 +2,7 @@ import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale
 import {projectCover} from './cards.js';
 import {watchChanges} from './realtime.js';
 import * as api from './api.js';
-import {Viewer,loadPdf,marker,numberBadge} from './viewer.js';
+import {Viewer,loadPdf,marker,numberBadge} from './viewer.js?v=zoom-selection';
 import {snapshot,grouped,clamp} from './model.js';
 import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,placeLaser,laserOnPage} from './ship-model.js';
 import {editShipPlan} from './ship-editor.js';
