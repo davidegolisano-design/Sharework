@@ -488,8 +488,8 @@ function annotationHeading(annotation){
 
 async function openMarkers(hits){
  if(dialogOpen||finishPick||loading||areaSession)return;
- const ids=new Set(hits.map(item=>item.id));
- const items=annotations.filter(item=>ids.has(item.id)&&!item.deleted);
+ const byId=new Map(annotations.filter(item=>!item.deleted).map(item=>[item.id,item]));
+ const items=[...new Set(hits.map(item=>item.id))].map(id=>byId.get(id)).filter(Boolean);
  if(!items.length)return;
  if(items.length===1){await openMarker(items[0]);return;}
  const box=modal(tr('Elementi in questa zona'));

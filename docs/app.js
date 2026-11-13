@@ -1,11 +1,11 @@
-import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=6fd7804e26b7';
-import {projectCover} from './cards.js?v=6fd7804e26b7';
-import {watchChanges} from './realtime.js?v=6fd7804e26b7';
-import * as api from './api.js?v=6fd7804e26b7';
-import {Viewer,loadPdf,marker,numberBadge} from './viewer.js?v=6fd7804e26b7';
-import {snapshot,grouped,clamp,annotationStrokes} from './model.js?v=6fd7804e26b7';
-import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,placeLaser,laserOnPage} from './ship-model.js?v=6fd7804e26b7';
-import {editShipPlan} from './ship-editor.js?v=6fd7804e26b7';
+import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=3188c8a21bcf';
+import {projectCover} from './cards.js?v=3188c8a21bcf';
+import {watchChanges} from './realtime.js?v=3188c8a21bcf';
+import * as api from './api.js?v=3188c8a21bcf';
+import {Viewer,loadPdf,marker,numberBadge} from './viewer.js?v=3188c8a21bcf';
+import {snapshot,grouped,clamp,annotationStrokes} from './model.js?v=3188c8a21bcf';
+import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,placeLaser,laserOnPage} from './ship-model.js?v=3188c8a21bcf';
+import {editShipPlan} from './ship-editor.js?v=3188c8a21bcf';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
 let stopRealtime=null,refreshTimer;
 let user,profile,projects=[],project,projectLevel,activeDocument,annotations=[],pdf,authMode='login',dialogClose=null,dialogOpen=false,polling=false,epoch=0;
@@ -488,8 +488,8 @@ function annotationHeading(annotation){
 
 async function openMarkers(hits){
  if(dialogOpen||finishPick||loading||areaSession)return;
- const ids=new Set(hits.map(item=>item.id));
- const items=annotations.filter(item=>ids.has(item.id)&&!item.deleted);
+ const byId=new Map(annotations.filter(item=>!item.deleted).map(item=>[item.id,item]));
+ const items=[...new Set(hits.map(item=>item.id))].map(id=>byId.get(id)).filter(Boolean);
  if(!items.length)return;
  if(items.length===1){await openMarker(items[0]);return;}
  const box=modal(tr('Elementi in questa zona'));

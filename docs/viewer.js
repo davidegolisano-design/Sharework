@@ -1,9 +1,9 @@
 import * as pdfjs from './vendor/build/pdf.mjs';
-import {normalized,segmentDistance,contrast,clamp,annotationStrokes} from './model.js?v=6fd7804e26b7';
+import {normalized,segmentDistance,contrast,clamp,annotationStrokes,expandOverlappingMarkers} from './model.js?v=3188c8a21bcf';
 pdfjs.GlobalWorkerOptions.workerSrc=new URL('./vendor/build/pdf.worker.mjs',import.meta.url).href;
 const vendor=new URL('./vendor/',import.meta.url).href;
 export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendor+'cmaps/',cMapPacked:true,standardFontDataUrl:vendor+'standard_fonts/',wasmUrl:vendor+'wasm/',iccUrl:vendor+'iccs/',isEvalSupported:false}).promise;}
-import {emojiSymbols} from './ship-model.js?v=6fd7804e26b7';
+import {emojiSymbols} from './ship-model.js?v=3188c8a21bcf';
 const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
 // Use the part of the viewport covered by the sheet, including height-fitted overviews.
@@ -75,6 +75,28 @@ function markPosition(annotation,rect){
  const {width,pixels}=highlightGeometry(annotation,rect,stroke);
  const [x,y]=pixels[Math.floor((pixels.length-1)/2)];
  return [annotation.projected?(pixels[0][0]+pixels.at(-1)[0])/2:x,y-Math.min(13,width/2)-8];
+}
+
+function markerBounds(annotation,rect){
+ const [x,y]=markPosition(annotation,rect);
+ const bounds={left:x-12,right:x+12,top:y-8,bottom:y+8};
+ if(annotation.kind==='note'){
+  const radius=markerRadius*1.3+2;
+  bounds.left=x-radius;
+  bounds.right=x+radius;
+  bounds.top=y-radius;
+  bounds.bottom=y+radius;
+  if(emojiSymbols[annotation.shape]&&annotation.number!=null){
+   const badgeHalfWidth=Math.max(7,String(annotation.number).length*4+3)+1;
+   bounds.right=Math.max(bounds.right,x+markerRadius*.65+badgeHalfWidth);
+   bounds.bottom=Math.max(bounds.bottom,y+markerRadius*.45+14);
+  }
+ }else if(annotation.number!=null){
+  const halfWidth=Math.max(7,String(annotation.number).length*4+3)+1;
+  bounds.left=x-halfWidth;
+  bounds.right=x+halfWidth;
+ }
+ return bounds;
 }
 
 function markerY(annotation,rect){
@@ -207,8 +229,8 @@ export class Viewer{
   const candidates=[];
   for(const a of this.marks){
    if(a.page!==this.pageNumber||a.deleted)continue;
-   const [mx,my]=markPosition(a,rect);
-   let distance=Math.hypot(x-mx,y-my)-(a.kind==='note'?markerRadius:10);
+   const bounds=markerBounds(a,rect);
+   let distance=Math.hypot(x-clamp(x,bounds.left,bounds.right),y-clamp(y,bounds.top,bounds.bottom));
    for(const stroke of annotationStrokes(a)){
     const {width,pixels}=highlightGeometry(a,rect,stroke);
     let strokeDistance=Math.hypot(x-pixels[0][0],y-pixels[0][1]);
@@ -217,12 +239,12 @@ export class Viewer{
     }
     distance=Math.min(distance,strokeDistance-width/2);
    }
-   candidates.push({annotation:a,distance});
+   candidates.push({annotation:a,distance,bounds});
   }
   // Include neighbors around a directly hit mark without changing the zoom.
   const direct=candidates.some(item=>item.distance<=touchAllowance);
   const radius=padding+touchAllowance+(direct?Math.min(32,padding/2):0);
-  return candidates.filter(item=>item.distance<=radius)
+  return expandOverlappingMarkers(candidates,radius)
    .sort((a,b)=>a.distance-b.distance).map(item=>item.annotation);
  }
 }
