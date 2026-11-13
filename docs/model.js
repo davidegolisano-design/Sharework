@@ -12,20 +12,31 @@ export function annotationStrokes(annotation){
  return [];
 }
 
-// A tap anywhere on a visible marker can select the entire stack, including
-// markers reached through an overlap with another marker in the stack.
-export function expandOverlappingMarkers(candidates,radius){
- const selected=new Set(candidates.filter(item=>item.distance<=radius));
- const queue=[...selected];
- for(let i=0;i<queue.length;i++){
-  const a=queue[i].bounds;
+// Keep nearby choices relative to the symbol the user hit. The marker size
+// is fixed on screen even when the PDF zoom changes.
+export function expandOverlappingMarkers(candidates,radius,neighborGap=0){
+ const queue=candidates.filter(item=>item.distance<=radius);
+ const selected=new Set(queue);
+ const anchor=queue.reduce((nearest,item)=>!nearest||item.distance<nearest.distance?item:nearest,null);
+ if(anchor&&neighborGap>0){
   for(const item of candidates){
-   if(selected.has(item))continue;
-   const b=item.bounds;
-   if(a.left>b.right||a.right<b.left||a.top>b.bottom||a.bottom<b.top)continue;
+   if(selected.has(item)||!boundsNear(anchor.bounds,item.bounds,neighborGap))continue;
+   selected.add(item);
+   queue.push(item);
+  }
+ }
+ for(let i=0;i<queue.length;i++){
+  for(const item of candidates){
+   if(selected.has(item)||!boundsNear(queue[i].bounds,item.bounds,0))continue;
    selected.add(item);
    queue.push(item);
   }
  }
  return queue;
+}
+
+function boundsNear(a,b,gap){
+ const horizontal=Math.max(0,a.left-b.right,b.left-a.right);
+ const vertical=Math.max(0,a.top-b.bottom,b.top-a.bottom);
+ return Math.hypot(horizontal,vertical)<=gap;
 }

@@ -1,4 +1,4 @@
-import {annotationStrokes} from './model.js?v=17d96b2f795f';
+import {annotationStrokes} from './model.js?v=d28c9a5bf961';
 export const emojiSymbols = {flame:'🔥',warning:'⚠️',electric:'⚡',tool:'🔧'};
 export const noteShapes = [
   ['circle', 'Punto'], ['square', 'Quadrato'], ['diamond', 'Rombo'], ['triangle', 'Triangolo'],
