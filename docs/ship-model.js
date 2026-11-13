@@ -10,11 +10,23 @@ export function shipPageOrder(plan, count) {
   return [...configured, ...shipPageOrder(null, count).filter(page => !configured.includes(page))];
 }
 
+// Signed distance from the common frame, independent of the PDF scale or direction.
+export function longitudinalScale(sheet) {
+  return (sheet.x1 - sheet.x0) / (Math.sign(sheet.frame1 - sheet.frame0) * sheet.meters);
+}
+
+export function mapDeckView(source, target, view) {
+  const from = longitudinalScale(source);
+  const to = longitudinalScale(target);
+  return {
+    x: target.x0 + (view.x - source.x0) / from * to,
+    pixelsPerMeter: view.width * Math.abs(from)
+  };
+}
+
 export function projectMarks(plan, annotations) {
   const {overview, decks} = plan;
   const byPage = new Map(decks.map(deck => [deck.page, deck]));
-  const direction = sheet => Math.sign(sheet.frame1 - sheet.frame0);
-  const pixelsPerMeter = (overview.x1 - overview.x0) / (direction(overview) * overview.meters);
   const projected = [];
   for (const annotation of annotations) {
     const deck = byPage.get(annotation.page);
@@ -22,8 +34,7 @@ export function projectMarks(plan, annotations) {
     const sourceX = annotation.kind === 'highlight' && annotation.points.length
       ? annotation.points.reduce((total, point) => total + point[0], 0) / annotation.points.length
       : annotation.x;
-    const meters = (sourceX - deck.x0) / (deck.x1 - deck.x0) * deck.meters * direction(deck);
-    const x = overview.x0 + meters * pixelsPerMeter;
+    const {x} = mapDeckView(deck, overview, {x:sourceX,width:1});
     if (x < 0 || x > 1 || !Number.isFinite(x)) continue;
     projected.push({
       ...annotation, page:overview.page, x, y:deck.base, projected:true,

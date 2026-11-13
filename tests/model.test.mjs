@@ -6,7 +6,7 @@ test('Grouping, normalized coordinates and hit detection',()=>{
 });
 
 
-import {filterNotes,projectMarks,shipPageOrder} from '../src/ship-model.js';
+import {filterNotes,projectMarks,shipPageOrder,mapDeckView,longitudinalScale} from '../src/ship-model.js';
 
 test('Ship plans project a shared frame across scales and orientations',()=>{
  const overview={page:1,frame0:0,frame1:74,x0:.2,x1:.6,meters:51.06};
@@ -22,4 +22,17 @@ test('Ship plans project a shared frame across scales and orientations',()=>{
  assert.deepEqual(shipPageOrder(plan,4),[1,3,2,4]);
  assert.deepEqual(filterNotes([note],{query:'TAGLIO',page:'3',kind:'flame',author:'one',day:''}),[note]);
  assert.deepEqual(filterNotes([note],{query:'TAGLIO',page:'1',kind:'flame',author:'one',day:''}),[]);
+});
+
+test('Deck switching preserves frame and screen scale across different page layouts',()=>{
+ const aft={x0:.2,x1:.6,frame0:0,frame1:74,meters:51.06};
+ const reversed={x0:.75,x1:.25,frame0:0,frame1:37,meters:25.53};
+ const from={x:.3,width:2400};
+ const next=mapDeckView(aft,reversed,from);
+ assert.ok(Math.abs(next.x-.5)<1e-9);
+ const width=next.pixelsPerMeter/Math.abs(longitudinalScale(reversed));
+ assert.ok(Math.abs(width-960)<1e-9);
+ const back=mapDeckView(reversed,aft,{x:next.x,width});
+ assert.ok(Math.abs(back.x-from.x)<1e-9);
+ assert.ok(Math.abs(back.pixelsPerMeter-next.pixelsPerMeter)<1e-9);
 });
