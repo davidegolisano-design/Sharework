@@ -1,3 +1,4 @@
+export const emojiSymbols = {flame:'🔥',warning:'⚠️',electric:'⚡',tool:'🔧'};
 export const noteShapes = [
   ['circle', 'Punto'], ['square', 'Quadrato'], ['diamond', 'Rombo'], ['triangle', 'Triangolo'],
   ['flame', 'Fiamma'], ['warning', 'Attenzione'], ['electric', 'Elettrico'], ['tool', 'Attrezzatura']
