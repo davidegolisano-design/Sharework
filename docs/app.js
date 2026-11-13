@@ -501,8 +501,9 @@ async function openAnnotation(initial,before=initial){
   addNoteNavigation(current);
   return;
  }
- let timer,chain=Promise.resolve(),failed=false;
+ let timer,chain=Promise.resolve(),failed=false,deleting=false;
  const box=modal(heading,async()=>{
+  if(deleting)return false;
   clearTimeout(timer);
   await flush();
   if(failed)return false;
@@ -540,6 +541,19 @@ async function openAnnotation(initial,before=initial){
    });
   }));
  }
+ $('dialog-footer').append(deleteAnnotationButton(async remove=>{
+  deleting=true;
+  title.disabled=description.disabled=true;
+  clearTimeout(timer);
+  try{
+   await flush();
+   if(failed||!box.contains(title))return;
+   await remove(current, before);
+  }finally{
+   deleting=false;
+   title.disabled=description.disabled=false;
+  }
+ }));
  addNoteNavigation(current);
 }
 function addNoteNavigation(note){
@@ -549,7 +563,33 @@ function addNoteNavigation(note){
  }));
  $('dialog-footer').append(btn(tr('Chiudi'),closeModal));
 }
-async function annotationMenu(a){if(!canWrite()||finishPick)return;const box=modal(a.kind==='note'?tr('Nota')+' '+a.number:tr('Evidenziazione'));box.append(btn(tr('Impostazioni aspetto'),async()=>{await closeModal();await toolSettings(a.kind,a);}));box.append(btn(tr('Elimina'),async()=>{if(!confirm(tr('Eliminare questa annotazione?')))return;const next=await patch(a,{deleted:true});record(a,next);await closeModal();}));}
+function deleteAnnotationButton(action){
+ const button=btn(tr('Elimina'),async()=>{
+  if(button.disabled||!canWrite()||!confirm(tr('Eliminare questa annotazione?')))return;
+  button.disabled=true;
+  try{await action(removeAnnotation);}
+  finally{button.disabled=false;}
+ },'danger');
+ return button;
+}
+
+async function removeAnnotation(annotation,before=annotation){
+ const deleted=await patch(annotation,{deleted:true});
+ record(before,annotation);
+ record(annotation,deleted);
+ dialogClose=null;
+ await closeModal();
+}
+
+async function annotationMenu(annotation){
+ if(!canWrite()||finishPick)return;
+ const box=modal(annotation.kind==='note'?tr('Nota')+' '+annotation.number:tr('Evidenziazione'));
+ box.append(btn(tr('Impostazioni aspetto'),async()=>{
+  await closeModal();
+  if(!dialogOpen)await toolSettings(annotation.kind,annotation);
+ }));
+ box.append(deleteAnnotationButton(remove=>remove(annotation)));
+}
 async function toolSettings(kind,existing=null){if(!canWrite()||finishPick||(!existing&&!canPlace()))return;const initial=existing?structuredClone(existing):structuredClone(viewer.settings[kind]);let choice={...initial},current=existing;const box=modal(tr(kind==='note'?'Impostazioni nota':'Impostazioni evidenziatore'));const canvas=document.createElement('canvas');canvas.className='settings-preview';canvas.width=430;canvas.height=65;box.append(canvas);const preview=()=>{const c=canvas.getContext('2d');c.clearRect(0,0,430,65);if(kind==='note')marker(c,215,32,choice.color,choice.shape,existing?.number||1);else{c.strokeStyle=choice.color;c.globalAlpha=choice.opacity/100;c.lineWidth=choice.width;c.lineCap='round';c.beginPath();c.moveTo(40,32);c.lineTo(390,32);c.stroke();c.globalAlpha=1;}};const color=field(box,tr('Colore'),{type:'color',value:choice.color});color.oninput=()=>{choice.color=color.value;preview();};if(kind==='note'){
  const options=text('div','','symbol-picker');
  const update=()=>{
