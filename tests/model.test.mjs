@@ -52,3 +52,12 @@ test('Laser follows the same ordinate across the overview and calibrated decks',
  assert.equal(placeLaser(plan,1,[.5,.25]).y,.5);
  assert.equal(laserOnPage(plan,3,laser),null);
 });
+
+test('Overview highlights span their occupied frames even on reversed plans',()=>{
+ const overview={page:1,x0:.2,x1:.6,frame0:0,frame1:74,meters:51.06};
+ const deck={page:2,x0:.75,x1:.25,frame0:0,frame1:37,meters:25.53,base:.45};
+ const [mark]=projectMarks({overview,decks:[deck]},[{page:2,kind:'highlight',number:18,points:[[.75,.3],[.25,.6],[.5,.1]]}]);
+ assert.equal(mark.number,18);
+ assert.equal(mark.kind,'highlight');
+ assert.deepEqual(mark.points.map(([x,y])=>[Math.round(x*100),y]),[[20,.45],[40,.45]]);
+});

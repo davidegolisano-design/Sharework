@@ -50,15 +50,21 @@ export function projectMarks(plan, annotations) {
   for (const annotation of annotations) {
     const deck = byPage.get(annotation.page);
     if (!deck) continue;
-    const sourceX = annotation.kind === 'highlight' && annotation.points.length
-      ? annotation.points.reduce((total, point) => total + point[0], 0) / annotation.points.length
-      : annotation.x;
-    const {x} = mapDeckView(deck, overview, {x:sourceX,width:1});
-    if (x < 0 || x > 1 || !Number.isFinite(x)) continue;
-    projected.push({
-      ...annotation, page:overview.page, x, y:deck.base, projected:true,
-      kind:'note', shape:annotation.kind === 'highlight' ? 'highlight' : annotation.shape
-    });
+    if (annotation.kind === 'highlight') {
+      let left = Infinity, right = -Infinity;
+      for (const [sourceX] of annotation.points.length ? annotation.points : [[annotation.x]]) {
+        const {x} = mapDeckView(deck, overview, {x:sourceX,width:1});
+        left = Math.min(left,x);
+        right = Math.max(right,x);
+      }
+      if (!Number.isFinite(left) || !Number.isFinite(right) || right < 0 || left > 1) continue;
+      const points = [[Math.max(0,left),deck.base],[Math.min(1,right),deck.base]];
+      projected.push({...annotation,page:overview.page,points,projected:true});
+    } else {
+      const {x} = mapDeckView(deck, overview, {x:annotation.x,width:1});
+      if (x < 0 || x > 1 || !Number.isFinite(x)) continue;
+      projected.push({...annotation,page:overview.page,x,y:deck.base,projected:true});
+    }
   }
   return projected;
 }

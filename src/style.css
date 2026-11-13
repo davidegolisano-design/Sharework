@@ -119,3 +119,7 @@ button.primary:hover{background:#24417e;border-color:#24417e}
 
 button.danger{background:#ac2529;border-color:#ac2529;color:#fff;font-weight:600}
 button.danger:hover:not(:disabled){background:#8c1c20;border-color:#8c1c20}
+
+.annotation-choice{display:flex;align-items:center;gap:10px;width:100%;margin:6px 0;text-align:left;white-space:normal;overflow-wrap:anywhere}
+.annotation-choice .badge{flex:none}
+.annotation-choice small{display:block;margin-top:3px;color:#5c6470}

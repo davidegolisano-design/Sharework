@@ -1,4 +1,5 @@
 const english = {
+ "Elementi in questa zona":"Items in this area",
  "Tocca la tavola per spostare il riferimento laser":"Tap the drawing to move the laser reference",
  "Mostra note":"Show notes",
  "Ponte attuale":"Current deck",
