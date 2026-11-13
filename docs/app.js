@@ -410,7 +410,7 @@ async function toolSettings(kind,existing=null){if(!canWrite()||finishPick||(!ex
   const icon=document.createElement('canvas');
   icon.width=icon.height=68;
   const ctx=icon.getContext('2d');ctx.scale(2,2);
-  marker(ctx,17,17,'#1d686c',shape,null,11);
+  marker(ctx,17,17,'#2f529e',shape,null,11);
   button.append(icon);
   options.append(button);
  }
