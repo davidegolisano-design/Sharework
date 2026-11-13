@@ -126,5 +126,7 @@ button.danger:hover:not(:disabled){background:#8c1c20;border-color:#8c1c20}
 
 #area-banner{display:flex;align-items:center;flex-wrap:wrap;gap:5px;padding:5px 8px;background:#e5edfc}
 #area-banner button{min-height:32px;padding:4px 8px;font-size:12px}
-#area-banner input{width:36px;height:32px}
+#area-color{width:36px;height:32px}
+#area-banner .area-range{display:grid;grid-template-columns:1fr auto;align-items:center;column-gap:5px;margin:0;font-size:11px;min-width:95px}
+#area-banner .area-range input{grid-column:1/-1;width:100%;height:22px;margin:0}
 #area-pan[aria-pressed="true"]{background:#2f529e;color:#fff}

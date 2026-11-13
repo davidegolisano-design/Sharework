@@ -630,8 +630,12 @@ function updateAreaControls(){
  $('area-count').textContent=tr('Tratti')+': '+strokes.length;
  $('area-undo').disabled=Boolean(saving)||!strokes.length;
  $('area-clear').disabled=$('area-undo').disabled;
- for(const id of ['area-save','area-cancel','area-pan','area-color'])$(id).disabled=Boolean(saving);
- $('area-color').value=viewer.areaDraft.color;
+ for(const id of ['area-save','area-cancel','area-pan','area-color','area-width','area-transparency'])$(id).disabled=Boolean(saving);
+ $('area-color').value=areaSession.color;
+ $('area-width').value=areaSession.width;
+ $('area-width-value').value=areaSession.width;
+ $('area-transparency').value=100-areaSession.opacity;
+ $('area-transparency-value').value=(100-areaSession.opacity)+'%';
  $('area-pan').setAttribute('aria-pressed',String(viewer.mode!=='area'));
  viewer.draw(false);
 }
@@ -652,11 +656,14 @@ $('area-pan').onclick=()=>{
  viewer.mode=viewer.mode==='area'?null:'area';
  updateAreaControls();
 };
-$('area-color').oninput=()=>{
- if(!areaSession)return;
- areaSession.color=viewer.areaDraft.color=$('area-color').value;
- viewer.draw(false);
-};
+function setAreaStyle(property,value){
+ if(!areaSession||areaSession.saving)return;
+ areaSession[property]=viewer.areaDraft[property]=value;
+ updateAreaControls();
+}
+$('area-color').oninput=()=>setAreaStyle('color',$('area-color').value);
+$('area-width').oninput=()=>setAreaStyle('width',$('area-width').valueAsNumber);
+$('area-transparency').oninput=()=>setAreaStyle('opacity',100-$('area-transparency').valueAsNumber);
 $('area-undo').onclick=()=>{areaSession?.strokes.pop();updateAreaControls();};
 $('area-clear').onclick=()=>{if(areaSession)areaSession.strokes.length=0;updateAreaControls();};
 $('area-cancel').onclick=()=>{
