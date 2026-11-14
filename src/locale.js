@@ -1,4 +1,11 @@
 const english = {
+ "Ponteggio":"Scaffolding",
+ "Tubisteria":"Pipefitting",
+ "Categoria":"Category",
+ "Nome categoria":"Category name",
+ "Stampa PDF":"Print PDF",
+ "Impossibile aprire il salvataggio PDF.":"Could not open the PDF save dialog.",
+
  "Elimina progetto":"Delete project",
  "Il progetto verrà rimosso dall’elenco e i suoi accessi saranno disattivati.":"The project will be removed from the list and access will be revoked.",
  "Tipologia lavoro":"Work type",

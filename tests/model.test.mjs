@@ -127,3 +127,11 @@ test('The symbol filter includes matching work with an outlined region',()=>{
  assert.deepEqual(filterNotes([work],{kind:'highlight'}),[work]);
  assert.deepEqual(filterNotes([work],{kind:'painting'}),[]);
 });
+
+test('Fixed emoji categories and custom shape categories filter independently',async()=>{
+ const {noteCategory,emojiSymbols}=await import('../src/ship-model.js');
+ const notes=[{shape:'flame'},{shape:'welding'},{shape:'circle',custom_category:'Coibentazione'}];
+ for(const shape of Object.keys(emojiSymbols))assert.ok(noteCategory({shape}));
+ assert.deepEqual(filterNotes(notes,{category:'hot_work'}),notes.slice(0,2));
+ assert.deepEqual(filterNotes(notes,{category:'custom:coibentazione'}),notes.slice(2));
+});

@@ -5,7 +5,7 @@ import {watchChanges} from './realtime.js';
 import * as api from './api.js';
 import {Viewer,loadPdf,marker} from './viewer.js';
 import {snapshot,grouped,clamp,annotationStrokes,normalizeSearch,searchRanges} from './model.js';
-import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js';
+import {filterNotes,noteShapes,noteCategory,geometricSymbols,workCategories,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js';
 import {finishRegion,legacyRegions} from './work-regions.js';
 import {editShipPlan} from './ship-editor.js';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
@@ -25,7 +25,7 @@ const isOverview = () => plan()?.overview.page === viewer.pageNumber;
 const canPlace = () => canWrite() && Boolean(plan()?.decks.some(deck=>deck.page===viewer.pageNumber));
 const pageName = n => plan()?.overview.page===n ? 'General Overview' : plan()?.decks.find(deck=>deck.page===n)?.name || tr('Pagina')+' '+n;
 const phoneLayout=matchMedia('(max-width:960px), (orientation:landscape) and (max-height:550px)');
-const filterIds = ['notes-query','notes-page','notes-kind','notes-author','notes-day','notes-work-status'];
+const filterIds = ['notes-query','notes-page','notes-kind','notes-author','notes-day','notes-work-status','notes-category'];
 const stateLabels=new Map(workStates);
 let scheduleTimer;
 let finishPick = null;
@@ -517,7 +517,7 @@ function updatePages(){
  for(const el of document.querySelectorAll('#toolbar .tool-group,#undo,#redo'))el.hidden=!writable;
  $('undo').disabled=!writable||busy||!undo.length;
  $('redo').disabled=!writable||busy||!redo.length;
- $('mobile-tools').hidden=!writable&&!canExportWorks();
+
  for(const id of ['note-tool','note-settings']) $(id).disabled=!canPlace()||busy;
  if(!canPlace()||finishPick) mode(null);
  $('ship-pages').hidden=!plan();
@@ -573,6 +573,16 @@ $('panel-toggle').onclick=$('mobile-notes').onclick=$('notes-close').onclick=tog
 phoneLayout.addEventListener('change',()=>{panelHidden=phoneLayout.matches;$('mobile-tools').open=!phoneLayout.matches;applyPanel();});
 $('mobile-tools').open=!phoneLayout.matches;
 $('workspace-body').addEventListener('pointerdown',e=>{if(e.target.closest('#viewport'))$('mobile-tools').open=!phoneLayout.matches;});
+$('print-view').onclick=async()=>{
+ if(!activeDocument||loading||areaSession||!viewer.pdfPage)return;
+ const button=$('print-view');
+ button.disabled=true;
+ try{
+  const {printPlan}=await import('./plan-print.js');
+  await printPlan(viewer,visiblePlanWidth(),[project.title,pageName(viewer.pageNumber)].join(' · '),tr);
+ }catch(error){report(error);}
+ finally{button.disabled=false;}
+};
 $('export-works').onclick=async()=>{
  if(!activeDocument||!project||!canExportWorks())return;
  const button=$('export-works');
@@ -651,14 +661,17 @@ function refreshList(){
  const overview=isOverview();
  const order=shipPageOrder(plan(),pdf.numPages);
  selectOptions($('notes-page'),[['',tr('Tutte')],...order.map(n=>[n,pageName(n)])]);
- selectOptions($('notes-kind'),[['',tr('Tutti')],...noteShapes.map(([key,label])=>[key,(emojiSymbols[key]||({circle:'●',square:'■',diamond:'◆',triangle:'▲'})[key])+' '+tr(label)]),['highlight',tr('Evidenziazione')]]);
+ selectOptions($('notes-kind'),[['',tr('Tutti')],...noteShapes.map(([key,label])=>[key,(emojiSymbols[key]||geometricSymbols[key])+' '+tr(label)]),['highlight',tr('Evidenziazione')]]);
  const authors=new Map(annotations.filter(a=>!a.deleted).map(a=>[a.created_by,a.author_name]));
  selectOptions($('notes-author'),[['',tr('Tutti')],...[...authors].sort((a,b)=>a[1].localeCompare(b[1],locale()))]);
  selectOptions($('notes-work-status'),[['',tr('Tutti')],...workStates.map(([key,label])=>[key,tr(label)])]);
- const [query,pageFilter,kind,author,day,statusFilter]=filterIds.map(id=>$(id).value);
+ const custom=new Map(annotations.filter(note=>!note.deleted).map(noteCategory).filter(category=>category?.custom)
+  .map(category=>[category.key,category.icon+' '+category.label]));
+ selectOptions($('notes-category'),[['',tr('Tutti')],...workCategories.map(([key,icon,label])=>[key,icon+' '+tr(label)]),...custom]);
+ const [query,pageFilter,kind,author,day,statusFilter,categoryFilter]=filterIds.map(id=>$(id).value);
  const search=normalizeSearch(query).trim();
  const now=Date.now();
- const filtering=Boolean(search||pageFilter||kind||author||day||statusFilter);
+ const filtering=Boolean(search||pageFilter||kind||author||day||statusFilter||categoryFilter);
  $('workspace-body').classList.toggle('filters-active',filtering);
  $('viewport').querySelector('.filtered-plan-label').hidden=!filtering;
  let boundary=Infinity;
@@ -670,7 +683,7 @@ function refreshList(){
   }
  }
  if(Number.isFinite(boundary))scheduleTimer=setTimeout(refreshList,Math.min(boundary-now+10,2147483647));
- const filtered=filterNotes(annotations,{query,page:pageFilter,kind,author,day,status:statusFilter,now})
+ const filtered=filterNotes(annotations,{query,page:pageFilter,kind,category:categoryFilter,author,day,status:statusFilter,now})
   .map(note=>({...note,effectiveStatus:workState(note,now)}));
  const visible=filtered.filter(note=>note.effectiveStatus!=='completed');
  const projected=overview?projectMarks(plan(),visible):[];
@@ -694,9 +707,12 @@ function refreshList(){
    previous=a.page;
   }
   const row=text('div','','annotation'),open=btn('',()=>openListedNote(a),'annotation-open');
+  row.classList.toggle('annotation-completed',a.effectiveStatus==='completed');
   const title=a.title||(a.kind==='note'?tr('Nota')+' '+a.number:tr('Evidenziazione'));
   open.append(highlightMatch(text('span','','annotation-title'),title,search));
   open.append(text('span',tr(stateLabels.get(a.effectiveStatus)),'work-badge work-'+a.effectiveStatus));
+  const category=noteCategory(a);
+  if(category)open.append(text('span',category.icon+' '+(category.custom?category.label:tr(category.label)),'annotation-author'));
   if(a.title&&a.number!=null&&search&&String(a.number).includes(search)){
    const number=text('span','','annotation-number');
    number.append('#',highlightMatch(text('span',''),String(a.number),search));
@@ -720,7 +736,7 @@ function refreshList(){
   const range=start==null?'':(' · '+frameNumber.format(start)+'–'+frameNumber.format(end));
   if(frame!=null)open.append(text('span',tr('Ordinata')+' '+frameNumber.format(frame)+range,'annotation-author'));
   const b=badge(a);
-  b.classList.toggle('work-muted',a.effectiveStatus!=='started');
+  b.classList.toggle('work-muted',['pending','paused'].includes(a.effectiveStatus));
   b.onclick=()=>openListedNote(a).catch(report);
   row.append(b,open);
   if(canWrite())row.append(btn('⋮',()=>annotationMenu(annotations.find(note=>note.id===a.id)||a),'more'));
@@ -1076,6 +1092,10 @@ async function toolSettings(existing=null){
  canvas.className='settings-preview';canvas.width=430;canvas.height=65;
  box.append(canvas);
  const color=field(box,tr('Colore'),{type:'color',value:choice.color});
+ const customCategory=field(box,tr('Nome categoria'),{value:choice.custom_category||''});
+ customCategory.maxLength=60;
+ const categoryHint=text('p','','work-schedule-state');
+ box.append(categoryHint);
  const options=text('div','','symbol-picker');
 
  function preview(){
@@ -1093,6 +1113,9 @@ async function toolSettings(existing=null){
  }
 
  function updateSymbol(){
+  customCategory.parentElement.hidden=!geometricSymbols[choice.shape];
+  const category=noteCategory({...choice,custom_category:customCategory.value});
+  categoryHint.textContent=category?category.icon+' '+(category.custom?category.label:tr(category.label)):'';
   color.parentElement.hidden=!hasArea&&Boolean(emojiSymbols[choice.shape]);
   for(const button of options.children){
    const selected=button.dataset.symbol===choice.shape;
@@ -1102,6 +1125,7 @@ async function toolSettings(existing=null){
   preview();
  }
 
+ customCategory.oninput=updateSymbol;
  color.oninput=()=>{choice.color=color.value;preview();};
  for(const [shape,label] of noteShapes){
   const button=btn('',()=>{choice.shape=shape;updateSymbol();},'symbol-choice');
@@ -1132,7 +1156,7 @@ async function toolSettings(existing=null){
  }
  updateSymbol();
  $('dialog-footer').append(btn(tr('Applica'),async()=>{
-  const changes={shape:choice.shape};
+  const changes={shape:choice.shape,custom_category:geometricSymbols[choice.shape]?customCategory.value.trim()||null:null};
   if(hasArea||!emojiSymbols[choice.shape])changes.color=choice.color;
   if(hasArea&&!hasRegion){changes.width=choice.width;changes.opacity=choice.opacity;}
   if(existing){

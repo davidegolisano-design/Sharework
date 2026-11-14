@@ -196,7 +196,11 @@ test('Database permissions, approval, authorship, numbering and private files',a
  await db.exec('reset role');
  await db.exec(await readFile('supabase/016_work_schedule.sql','utf8'));
  await db.exec(await readFile('supabase/017_super_admin_projects.sql','utf8'));
+ await db.exec(await readFile('supabase/019_custom_note_categories.sql','utf8'));
  await as(admin);
+ await db.query("update sw_annotations set shape='diamond',custom_category='Prefabbricazione' where id=$1",[first.id]);
+ await assert.rejects(db.query("update sw_annotations set shape='flame' where id=$1",[first.id]));
+ await db.query("update sw_annotations set shape='scaffolding',custom_category=null where id=$1",[first.id]);
  await db.query("update sw_annotations set work_type='welding',work_status='paused',work_start='2026-11-14T08:00Z',work_end='2026-11-14T09:00Z' where id=$1",[first.id]);
  await assert.rejects(db.query("update sw_annotations set work_end='2026-11-14T07:00Z' where id=$1",[first.id]));
  const [removable]=(await db.query("insert into sw_projects(title) values('Removal test') returning id")).rows;
