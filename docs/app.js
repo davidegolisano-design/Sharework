@@ -1,13 +1,13 @@
-import {workTypes,workStates,workState,localDateTime} from './work-schedule.js?v=1e39aee683ff';
-import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=1e39aee683ff';
-import {projectCover} from './cards.js?v=1e39aee683ff';
-import {watchChanges} from './realtime.js?v=1e39aee683ff';
-import * as api from './api.js?v=1e39aee683ff';
-import {Viewer,loadPdf,marker} from './viewer.js?v=1e39aee683ff';
-import {snapshot,grouped,clamp,annotationStrokes,normalizeSearch,searchRanges} from './model.js?v=1e39aee683ff';
-import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js?v=1e39aee683ff';
-import {finishRegion,legacyRegions} from './work-regions.js?v=1e39aee683ff';
-import {editShipPlan} from './ship-editor.js?v=1e39aee683ff';
+import {workStates,workState,localDateTime} from './work-schedule.js?v=82ba3a34c343';
+import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=82ba3a34c343';
+import {projectCover} from './cards.js?v=82ba3a34c343';
+import {watchChanges} from './realtime.js?v=82ba3a34c343';
+import * as api from './api.js?v=82ba3a34c343';
+import {Viewer,loadPdf,marker} from './viewer.js?v=82ba3a34c343';
+import {snapshot,grouped,clamp,annotationStrokes,normalizeSearch,searchRanges} from './model.js?v=82ba3a34c343';
+import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js?v=82ba3a34c343';
+import {finishRegion,legacyRegions} from './work-regions.js?v=82ba3a34c343';
+import {editShipPlan} from './ship-editor.js?v=82ba3a34c343';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
 let stopRealtime=null,refreshTimer,realtimeConnected=false,lastSafetyCheck=0,annotationRevision=0;
 const pendingSync=new Set();
@@ -25,8 +25,8 @@ const isOverview = () => plan()?.overview.page === viewer.pageNumber;
 const canPlace = () => canWrite() && Boolean(plan()?.decks.some(deck=>deck.page===viewer.pageNumber));
 const pageName = n => plan()?.overview.page===n ? 'General Overview' : plan()?.decks.find(deck=>deck.page===n)?.name || tr('Pagina')+' '+n;
 const phoneLayout=matchMedia('(max-width:960px), (orientation:landscape) and (max-height:550px)');
-const filterIds = ['notes-query','notes-page','notes-kind','notes-author','notes-day','notes-work-type','notes-work-status'];
-const stateLabels=new Map(workStates),typeLabels=new Map(workTypes);
+const filterIds = ['notes-query','notes-page','notes-kind','notes-author','notes-day','notes-work-status'];
+const stateLabels=new Map(workStates);
 let scheduleTimer;
 let finishPick = null;
 let areaSession = null;
@@ -92,7 +92,7 @@ function toast(message){$('toast').textContent=message;$('toast').hidden=false;c
 function screen(name){screens.forEach(id=>$(id).hidden=id!==name);}
 function status(value){$('sync-state').textContent=value;}
 function date(value){return new Date(value).toLocaleString(locale(),{dateStyle:'short',timeStyle:'short'});}
-function mode(value){if(value&&laser){laser=null;refreshLaser();}if(phoneLayout.matches)$('mobile-tools').open=false;viewer.mode=canPlace()&&!finishPick&&viewer.mode!==value?value:null;$('note-tool').classList.toggle('active',viewer.mode==='note');}
+function mode(value){if(phoneLayout.matches)$('mobile-tools').open=false;viewer.mode=canPlace()&&!finishPick&&viewer.mode!==value?value:null;$('note-tool').classList.toggle('active',viewer.mode==='note');}
 const appDialog=$('dialog');
 let dialogPress=null, planActivation=null, openingMarker=false;
 function modal(title,onClose=null){
@@ -580,7 +580,7 @@ $('export-works').onclick=async()=>{
  const name=page=>configuration?.decks.find(deck=>deck.page===page)?.name||tr('Pagina')+' '+page;
  button.disabled=true;
  try{
-  const {exportWorks}=await import('./work-export.js?v=1e39aee683ff');
+  const {exportWorks}=await import('./work-export.js?v=82ba3a34c343');
   if(canExportWorks()&&!$('workspace').hidden)await exportWorks(works,configuration,title,name,tr,locale());
  }catch(error){report(error);}
  finally{button.disabled=false;}
@@ -654,13 +654,11 @@ function refreshList(){
  selectOptions($('notes-kind'),[['',tr('Tutti')],...noteShapes.map(([key,label])=>[key,(emojiSymbols[key]||({circle:'●',square:'■',diamond:'◆',triangle:'▲'})[key])+' '+tr(label)]),['highlight',tr('Evidenziazione')]]);
  const authors=new Map(annotations.filter(a=>!a.deleted).map(a=>[a.created_by,a.author_name]));
  selectOptions($('notes-author'),[['',tr('Tutti')],...[...authors].sort((a,b)=>a[1].localeCompare(b[1],locale()))]);
- for(const [id,choices] of [['notes-work-type',workTypes],['notes-work-status',workStates]]){
-  selectOptions($(id),[['',tr('Tutti')],...choices.map(([key,label])=>[key,tr(label)])]);
- }
- const [query,pageFilter,kind,author,day,workType,statusFilter]=filterIds.map(id=>$(id).value);
+ selectOptions($('notes-work-status'),[['',tr('Tutti')],...workStates.map(([key,label])=>[key,tr(label)])]);
+ const [query,pageFilter,kind,author,day,statusFilter]=filterIds.map(id=>$(id).value);
  const search=normalizeSearch(query).trim();
  const now=Date.now();
- const filtering=Boolean(search||pageFilter||kind||author||day||workType||statusFilter);
+ const filtering=Boolean(search||pageFilter||kind||author||day||statusFilter);
  $('workspace-body').classList.toggle('filters-active',filtering);
  $('viewport').querySelector('.filtered-plan-label').hidden=!filtering;
  let boundary=Infinity;
@@ -672,7 +670,7 @@ function refreshList(){
   }
  }
  if(Number.isFinite(boundary))scheduleTimer=setTimeout(refreshList,Math.min(boundary-now+10,2147483647));
- const filtered=filterNotes(annotations,{query,page:pageFilter,kind,author,day,workType,status:statusFilter,now})
+ const filtered=filterNotes(annotations,{query,page:pageFilter,kind,author,day,status:statusFilter,now})
   .map(note=>({...note,effectiveStatus:workState(note,now)}));
  const visible=filtered.filter(note=>note.effectiveStatus!=='completed');
  const projected=overview?projectMarks(plan(),visible):[];
@@ -699,7 +697,6 @@ function refreshList(){
   const title=a.title||(a.kind==='note'?tr('Nota')+' '+a.number:tr('Evidenziazione'));
   open.append(highlightMatch(text('span','','annotation-title'),title,search));
   open.append(text('span',tr(stateLabels.get(a.effectiveStatus)),'work-badge work-'+a.effectiveStatus));
-  if(a.work_type)open.append(text('span',tr(typeLabels.get(a.work_type)),'annotation-author'));
   if(a.title&&a.number!=null&&search&&String(a.number).includes(search)){
    const number=text('span','','annotation-number');
    number.append('#',highlightMatch(text('span',''),String(a.number),search));
@@ -810,7 +807,6 @@ async function openAnnotation(initial,before=initial){
   if(current.title)box.append(text('h3',current.title,'note-reading-title'));
   if(current.description)box.append(text('p',current.description,'note-reading-description'));
   box.append(text('p',tr(stateLabels.get(workState(current)))));
-  if(current.work_type)box.append(text('p',tr(typeLabels.get(current.work_type))));
   for(const [label,value] of [['Inizio previsto',current.work_start],['Fine prevista',current.work_end]]){
    if(value)box.append(text('p',tr(label)+' · '+date(value)));
   }
@@ -840,14 +836,13 @@ async function openAnnotation(initial,before=initial){
   wrapper.append(select);scheduling.append(wrapper);
   return select;
  }
- const workType=selectWork('Tipologia lavoro',[['','Non specificata'],...workTypes],current.work_type);
  const workStatus=selectWork('Stato',[['','Automatico da orario'],...workStates],current.work_status);
  const workStart=field(scheduling,tr('Inizio previsto'),{type:'datetime-local',value:localDateTime(current.work_start)});
  const workEnd=field(scheduling,tr('Fine prevista'),{type:'datetime-local',value:localDateTime(current.work_end)});
  const effective=text('p','','work-schedule-state');
  scheduling.append(effective);
  function scheduleValues(){
-  return {work_type:workType.value||null,work_status:workStatus.value||null,
+  return {work_status:workStatus.value||null,
    work_start:workStart.value?workStart.value===localDateTime(initialStart)&&initialStart ? initialStart:new Date(workStart.value).toISOString():null,
    work_end:workEnd.value?workEnd.value===localDateTime(initialEnd)&&initialEnd ? initialEnd:new Date(workEnd.value).toISOString():null};
  }
@@ -869,7 +864,7 @@ async function openAnnotation(initial,before=initial){
   });
   return chain;
  }
- for(const el of [title,description,workType,workStatus,workStart,workEnd])el.oninput=()=>{
+ for(const el of [title,description,workStatus,workStart,workEnd])el.oninput=()=>{
    showState();clearTimeout(timer);timer=setTimeout(flush,500);
  };
  $('dialog-footer').append(btn(tr('Aspetto'),async()=>{
@@ -912,7 +907,6 @@ async function startArea(note){
  await page(note.page);
  if(viewer.pageNumber!==note.page||!canPlace())return;
  mode(null);
- laser=null;
  refreshLaser();
  const rect=viewer.rect();
  const regions=structuredClone(note.regions?.length?note.regions:

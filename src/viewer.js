@@ -410,7 +410,7 @@ export class Viewer{
    if(this.mode==='area'&&this.areaDraft.tool==='polygon'&&inside)this.callbacks.vertex?.(normalized(point.x,point.y,this.rect()));
    return;
   }
-  if(this.pick||this.laser){
+  if(this.pick||(this.laser&&this.mode!=='note')){
    if(inside){
     const position=normalized(point.x,point.y,this.rect());
     if(this.pick)this.pick(position);

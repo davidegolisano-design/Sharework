@@ -130,13 +130,13 @@ export function projectMarks(plan, annotations) {
   return projected;
 }
 
-export function filterNotes(annotations, {query, page, kind, author, day, workType, status, now}) {
+export function filterNotes(annotations, {query, page, kind, author, day, status, now}) {
   const search = normalizeSearch(query).trim();
   return annotations.filter(a => {
     const localDay = day ? new Date(a.created_at).toLocaleDateString('sv-SE') : '';
     return !a.deleted && (!page || a.page === Number(page)) &&
-      (!kind || kind === (annotationStrokes(a).length || a.regions?.length ? 'highlight' : a.shape)) &&
-      (!workType || a.work_type === workType) && (!status || workState(a,now) === status) &&
+      (!kind || kind===a.shape || (kind==='highlight'&&(annotationStrokes(a).length||a.regions?.length))) &&
+      (!status || workState(a,now) === status) &&
       (!author || a.created_by === author) && (!day || day === localDay) &&
       (!search || [a.title,a.description,a.number,a.author_name].some(value => normalizeSearch(value).includes(search)));
   });

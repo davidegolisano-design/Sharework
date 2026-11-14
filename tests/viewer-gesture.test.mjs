@@ -212,3 +212,25 @@ test('Switching decks with the laser off center preserves view instead of follow
  assert.equal(context.laser.x,.28);
  assert.equal(context.laser.y,.25);
 });
+
+test('An active laser stays in place when adding a note and moves again in navigation mode',()=>{
+ const viewer=Object.create(Viewer.prototype);
+ const positions=[],notes=[];
+ const laser={x:.3,y:.6};
+ Object.assign(viewer,{
+  pointers:new Map(),pdfPage:{},pageNumber:1,marks:[],laser,mode:'note',settings:{note:{shape:'circle'}},
+  rect:()=>({x:0,y:0,w:800,h:400,scale:1}),
+  container:{clientWidth:800,clientHeight:400,setPointerCapture(){},
+   getBoundingClientRect:()=>({left:0,top:0,width:800,height:400})},
+  callbacks:{create:note=>notes.push(note),laser:point=>positions.push(Array.from(point))}
+ });
+ const event={pointerId:1,isPrimary:true,pointerType:'touch',clientX:400,clientY:200,preventDefault(){}};
+ viewer.down(event);viewer.up(event);
+ assert.equal(notes.length,1);
+ assert.equal(notes[0].x,.5);
+ assert.equal(viewer.laser,laser);
+ assert.deepEqual(positions,[]);
+ viewer.mode=null;
+ viewer.down(event);viewer.up(event);
+ assert.deepEqual(positions,[[.5,.5]]);
+});

@@ -1,10 +1,3 @@
-export const workTypes=[
- ['hot_work','Lavoro a caldo'],['welding','Saldatura'],['pipework','Tubazioni'],
- ['lifting','Sollevamento'],['painting','Pittura'],['electrical','Elettrico'],
- ['mechanical','Meccanica'],['inspection','Ispezione'],['safety','Sicurezza'],
- ['cleaning','Pulizia'],['other','Altro']
-];
-
 export const workStates=[
  ['pending','Da iniziare'],['started','Iniziato'],['paused','Sospeso'],['completed','Terminato']
 ];

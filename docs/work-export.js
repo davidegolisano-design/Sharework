@@ -1,10 +1,10 @@
-import {workState,workStates,workTypes} from './work-schedule.js?v=1e39aee683ff';
+import {workState,workStates} from './work-schedule.js?v=82ba3a34c343';
 import writeExcelFile from './vendor/workbook.js';
-import {frameAt,workDecks,workFrameRange} from './ship-model.js?v=1e39aee683ff';
+import {frameAt,workDecks,workFrameRange,noteShapes} from './ship-model.js?v=82ba3a34c343';
 
 export async function exportWorks(annotations,plan,name,pageName,tr,locale){
- const headers=['Numero','Titolo','Descrizione','Ponte di origine','Ponti coinvolti','Frame del simbolo','Frame iniziale','Frame finale','Autore','Data','Tipologia lavoro','Stato','Inizio previsto','Fine prevista'];
- const states=new Map(workStates),types=new Map(workTypes),now=Date.now();
+ const headers=['Numero','Titolo','Descrizione','Ponte di origine','Ponti coinvolti','Frame del simbolo','Frame iniziale','Frame finale','Autore','Data','Simbolo','Stato','Inizio previsto','Fine prevista'];
+ const states=new Map(workStates),symbols=new Map(noteShapes),now=Date.now();
  const deckOrder=new Map((plan?.decks||[]).map((deck,i)=>[deck.page,i]));
  const rows=annotations.filter(note=>!note.deleted).sort((a,b)=>(deckOrder.get(a.page)??a.page)-(deckOrder.get(b.page)??b.page)||a.number-b.number).map(note=>{
   const sheet=plan?.decks.find(deck=>deck.page===note.page);
@@ -12,7 +12,7 @@ export async function exportWorks(annotations,plan,name,pageName,tr,locale){
   return [note.number,note.title,note.description,pageName(note.page),
    workDecks(plan,note).map(deck=>deck.name).join(', ')||pageName(note.page),
    frameAt(sheet,note.x),start,end,note.author_name,
-   new Date(note.created_at).toLocaleString(locale),tr(types.get(note.work_type)||'Non specificata'),tr(states.get(workState(note,now))),
+   new Date(note.created_at).toLocaleString(locale),tr(symbols.get(note.shape)||(note.shape==='highlight'?'Evidenziazione':note.shape)),tr(states.get(workState(note,now))),
    ...[note.work_start,note.work_end].map(value=>value?new Date(value).toLocaleString(locale):'')];
  });
  const workbook=writeExcelFile([headers.map(label=>({value:tr(label),fontWeight:'bold'})),...rows],{
