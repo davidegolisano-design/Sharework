@@ -247,3 +247,6 @@ dialog textarea{min-height:85px}
 .work-scheduling input,.work-scheduling select{min-width:0}
 .work-schedule-state{grid-column:1/-1;margin:2px 0;font-size:12px}
 @media(max-width:390px){.work-scheduling{grid-template-columns:1fr}}
+
+.annotation.annotation-completed{background:#d2efda;border-bottom:1px solid #8ac99a;padding-inline:8px;color:#154925}
+.annotation-completed .work-badge{background:#25713c;color:#fff}

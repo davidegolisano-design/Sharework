@@ -1,7 +1,30 @@
-import {workState} from './work-schedule.js?v=82ba3a34c343';
-import {annotationStrokes,normalizeSearch} from './model.js?v=82ba3a34c343';
+import {workState} from './work-schedule.js?v=655cb7f2c255';
+import {annotationStrokes,normalizeSearch} from './model.js?v=655cb7f2c255';
+export const workCategories=[
+ ['scaffolding','🪜','Ponteggio'],['hot_work','🔥','Lavoro a caldo'],['lifting','🏗️','Sollevamento'],
+ ['mechanical','⚙️','Meccanica'],['pipework','🚰','Tubisteria'],['electrical','⚡','Elettrico'],
+ ['cleaning','🧹','Pulizia'],['testing','🧪','Prove'],['painting','🖌️','Pittura'],
+ ['inspection','🔍','Ispezione'],['safety','⛑️','Sicurezza']
+];
+const categoriesById=new Map(workCategories.map(entry=>[entry[0],entry]));
+const shapeCategories={
+ scaffolding:'scaffolding',flame:'hot_work',welding:'hot_work',lifting:'lifting',
+ mechanical:'mechanical',tool:'mechanical',drilling:'mechanical',pipes:'pipework',electric:'electrical',
+ cleaning:'cleaning',testing:'testing',painting:'painting',inspection:'inspection',measurement:'inspection',
+ ppe:'safety',fire_watch:'safety',warning:'safety'
+};
+export const geometricSymbols={circle:'●',square:'■',diamond:'◆',triangle:'▲'};
+
+export function noteCategory(note){
+ const category=categoriesById.get(shapeCategories[note.shape]);
+ if(category)return {key:category[0],icon:category[1],label:category[2]};
+ const icon=geometricSymbols[note.shape];
+ const label=note.custom_category?.trim();
+ return icon&&label?{key:'custom:'+normalizeSearch(label),icon,label,custom:true}:null;
+}
+
 const workSymbols = [
-  ['flame','🔥','Fiamma'], ['warning','⚠️','Attenzione'], ['electric','⚡','Elettrico'], ['tool','🔧','Attrezzatura'],
+  ['scaffolding','🪜','Ponteggio'], ['flame','🔥','Fiamma'], ['warning','⚠️','Attenzione'], ['electric','⚡','Elettrico'], ['tool','🔧','Attrezzatura'],
   ['welding','🧑‍🏭','Saldatura'], ['pipes','🚰','Tubazioni'], ['lifting','🏗️','Sollevamento'],
   ['painting','🖌️','Pittura'], ['inspection','🔍','Ispezione'], ['ppe','⛑️','Sicurezza'],
   ['cleaning','🧹','Pulizia'], ['fire_watch','🧯','Antincendio'], ['mechanical','⚙️','Meccanica'],
@@ -130,14 +153,14 @@ export function projectMarks(plan, annotations) {
   return projected;
 }
 
-export function filterNotes(annotations, {query, page, kind, author, day, status, now}) {
+export function filterNotes(annotations, {query, page, kind, category, author, day, status, now}) {
   const search = normalizeSearch(query).trim();
   return annotations.filter(a => {
     const localDay = day ? new Date(a.created_at).toLocaleDateString('sv-SE') : '';
     return !a.deleted && (!page || a.page === Number(page)) &&
       (!kind || kind===a.shape || (kind==='highlight'&&(annotationStrokes(a).length||a.regions?.length))) &&
       (!status || workState(a,now) === status) &&
-      (!author || a.created_by === author) && (!day || day === localDay) &&
+      (!category || noteCategory(a)?.key===category) && (!author || a.created_by === author) && (!day || day === localDay) &&
       (!search || [a.title,a.description,a.number,a.author_name].some(value => normalizeSearch(value).includes(search)));
   });
 }

@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 : "${ANDROID_BUILD_TOOLS:?Set ANDROID_BUILD_TOOLS to the build-tools directory}"
 : "${SHAREWORK_KEYSTORE:?Set SHAREWORK_KEYSTORE to the release keystore}"
 : "${SHAREWORK_STORE_PASSWORD:?Set SHAREWORK_STORE_PASSWORD}"
-output="${1:-dist/Sharework-Android-v10.apk}"
+output="${1:-dist/Sharework-Android-v11.apk}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/res/drawable-nodpi" "$work/classes" "$(dirname "$output")"

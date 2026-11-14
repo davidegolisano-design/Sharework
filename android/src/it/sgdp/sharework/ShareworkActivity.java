@@ -33,11 +33,11 @@ public final class ShareworkActivity extends Activity {
     private static final String HOME = "https://davidegolisano-design.github.io/Sharework/";
     private static final String XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     private static final int OPEN_FILE = 1;
-    private static final int SAVE_EXCEL = 2;
+    private static final int SAVE_EXPORT = 2;
     private WebView web;
     private Button retry;
     private ValueCallback<Uri[]> filePicker;
-    private byte[] excelFile;
+    private byte[] exportFile;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -62,7 +62,7 @@ public final class ShareworkActivity extends Activity {
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " ShareworkAndroid/10");
+        settings.setUserAgentString(settings.getUserAgentString() + " ShareworkAndroid/11");
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -101,9 +101,10 @@ public final class ShareworkActivity extends Activity {
             @Override
             public boolean onJsPrompt(WebView view, String url, String message, String value,
                     JsPromptResult result) {
-                if (!"sharework:save-xlsx".equals(message)) return false;
+                boolean pdf = "sharework:save-pdf".equals(message);
+                if (!pdf && !"sharework:save-xlsx".equals(message)) return false;
                 boolean accepted = isSharework(Uri.parse(url)) && view.getUrl() != null && isSharework(Uri.parse(view.getUrl()))
-                        && saveExcel(value);
+                        && saveExport(value, pdf);
                 result.confirm(accepted ? "OK" : "");
                 return true;
             }
@@ -120,21 +121,23 @@ public final class ShareworkActivity extends Activity {
                 && path != null && path.startsWith("/Sharework/");
     }
 
-    private boolean saveExcel(String value) {
-        if (excelFile != null || value == null || value.length() > 12_000_000) return false;
+    private boolean saveExport(String value, boolean pdf) {
+        if (exportFile != null || value == null || value.length() > 12_000_000) return false;
         try {
             JSONObject request = new JSONObject(value);
             String name = request.getString("name");
-            if (!name.endsWith(".xlsx")) return false;
+            if (!name.endsWith(pdf ? ".pdf" : ".xlsx")) return false;
             byte[] data = Base64.decode(request.getString("data"), Base64.DEFAULT);
-            if (data.length < 4 || data[0] != 'P' || data[1] != 'K') return false;
-            excelFile = data;
+            if (data.length < 5) return false;
+            if (pdf ? data[0] != '%' || data[1] != 'P' || data[2] != 'D' || data[3] != 'F'
+                    : data[0] != 'P' || data[1] != 'K') return false;
+            exportFile = data;
             Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE);
-            intent.setType(XLSX).putExtra(Intent.EXTRA_TITLE, name);
-            startActivityForResult(intent, SAVE_EXCEL);
+            intent.setType(pdf ? "application/pdf" : XLSX).putExtra(Intent.EXTRA_TITLE, name);
+            startActivityForResult(intent, SAVE_EXPORT);
             return true;
         } catch (Exception e) {
-            excelFile = null;
+            exportFile = null;
             return false;
         }
     }
@@ -146,15 +149,15 @@ public final class ShareworkActivity extends Activity {
             filePicker.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result, intent));
             filePicker = null;
         }
-        if (request == SAVE_EXCEL) {
-            byte[] data = excelFile;
-            excelFile = null;
+        if (request == SAVE_EXPORT) {
+            byte[] data = exportFile;
+            exportFile = null;
             if (result != RESULT_OK || intent == null || intent.getData() == null || data == null) return;
             try (OutputStream stream = getContentResolver().openOutputStream(intent.getData())) {
                 if (stream == null) throw new IllegalStateException();
                 stream.write(data);
             } catch (Exception e) {
-                showMessage("Impossibile salvare il file Excel", "Could not save the Excel file");
+                showMessage("Impossibile salvare il file", "Could not save the file");
             }
         }
     }

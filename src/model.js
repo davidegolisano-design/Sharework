@@ -1,4 +1,4 @@
-export const editable=['title','description','color','shape','opacity','width','x','y','points','strokes','regions','decks_above','decks_below','work_start','work_end','work_status','deleted'];
+export const editable=['title','description','color','shape','opacity','width','x','y','points','strokes','regions','decks_above','decks_below','work_start','work_end','work_status','custom_category','deleted'];
 export function snapshot(a){return Object.fromEntries(editable.map(k=>[k,structuredClone(a[k])]));}
 export function grouped(items,page,all){return items.filter(a=>!a.deleted&&(all||a.page===page)).sort((a,b)=>a.page-b.page||a.created_at.localeCompare(b.created_at));}
 export const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));

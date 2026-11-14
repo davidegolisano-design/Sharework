@@ -2,7 +2,7 @@ import {tr} from './locale.js';
 let installEvent;
 const buttons=[];
 const standalone=matchMedia('(display-mode: standalone)');
-const androidApp=navigator.userAgent.includes('ShareworkAndroid/10');
+const androidApp=navigator.userAgent.includes('ShareworkAndroid/');
 for(const parent of [document.querySelector('#auth-form'),...document.querySelectorAll('.project-header .header-actions')]){
  const button=document.createElement('button');button.type='button';button.textContent=tr('Installa app');
  button.className='text-button';button.hidden=androidApp||standalone.matches;
