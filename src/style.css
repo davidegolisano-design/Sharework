@@ -262,10 +262,18 @@ dialog textarea{min-height:85px}
 @media(max-width:540px){.project-header{gap:8px;padding-inline:12px}.header-actions{flex-wrap:wrap;justify-content:flex-end}.header-actions button{white-space:normal}}
 
 .catalog-row{padding:9px 0;border-bottom:1px solid #edf1f3}
-.catalog-fields{display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:8px}
-.catalog-fields label:only-child{grid-column:1/-1}
+.catalog-fields,.catalog-translations{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.catalog-fields{grid-template-columns:repeat(2,minmax(0,1fr)) 92px}
+.catalog-standard-symbol{align-self:end;text-align:center;padding:9px;font-size:20px;color:#2f529e}
+#dialog:has(.catalog-fields),#dialog:has(.catalog-translations){width:min(660px,95vw)}
 .catalog-actions{display:flex;gap:5px}
 @media(max-width:470px){
  .catalog-row{grid-template-columns:minmax(0,1fr)}
  .catalog-actions{justify-content:flex-end}
+}
+
+@media (min-width:961px) and (min-height:551px),(min-width:961px) and (orientation:portrait){
+ #toolbar{gap:12px;padding-inline:14px}
+ #toolbar .tool-dropdown{display:flex;align-items:center;gap:10px}
+ #toolbar :is(#undo,#redo,#export-works,#print-view){border-color:#d7dce6}
 }

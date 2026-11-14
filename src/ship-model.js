@@ -10,6 +10,7 @@ const defaultCategories=[
 ];
 export const workCategories=[...defaultCategories];
 const categoriesById=new Map(defaultCategories.map(entry=>[entry[0],entry]));
+const defaultCategoryNames=new Map(defaultCategories.map(([id,,label])=>[id,label]));
 const shapeCategories={
  scaffolding:'scaffolding',flame:'hot_work',welding:'hot_work',lifting:'lifting',
  mechanical:'mechanical',tool:'mechanical',drilling:'mechanical',pipes:'pipework',electric:'electrical',
@@ -62,7 +63,7 @@ export function setWorkCatalog(rows){
  const active=[],extra=[];
  for(const [id,defaultIcon,defaultLabel] of entries){
   const row=byId.get(id),icon=row?.glyph||defaultIcon,label=row?.name||defaultLabel;
-  categoriesById.set(id,[id,icon,label,Boolean(row?.name)]);
+  categoriesById.set(id,[id,icon,label,Boolean(row?.name),row?.name_en]);
   if(row?.archived)archivedCategories.add(id);
   else active.push([id,icon,label]);
   const primary=primarySymbols.get(id);
@@ -87,9 +88,24 @@ export function setWorkCatalog(rows){
  });
  noteShapes.splice(0,noteShapes.length,...builtIn,...extra);
 }
-export function categoryLabel(id,tr){
+export function categoryNames(id,tr){
  const entry=categoriesById.get(id);
- return entry[3]?entry[2]:tr(entry[2]);
+ const standardName=defaultCategoryNames.get(id);
+ return [entry[2],entry[4]||(standardName?tr(standardName,'en-GB'):'')];
+}
+
+export function categoryLabel(id,tr,language){
+ const [it,en]=categoryNames(id,tr);
+ return language==='en-GB'?en||it:it;
+}
+
+export function symbolLabel([shape,label,custom],tr,language){
+ const id=geometricSymbols[shape]?shape:shapeCategories[shape];
+ if(categoriesById.has(id)&&(shape===id||shape===primarySymbols.get(id))){
+  const entry=categoriesById.get(id);
+  if(entry[3]||entry[4])return categoryLabel(id,tr,language);
+ }
+ return custom?label:tr(label,language);
 }
 
 export function shipPageOrder(plan, count) {

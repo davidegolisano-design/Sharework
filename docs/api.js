@@ -1,5 +1,5 @@
-import {tr} from './locale.js?v=f96817ccc7d6';
-import {SUPABASE_URL as URL,SUPABASE_KEY as KEY} from './config.js?v=f96817ccc7d6';
+import {tr} from './locale.js?v=d910adbc61f2';
+import {SUPABASE_URL as URL,SUPABASE_KEY as KEY} from './config.js?v=d910adbc61f2';
 export const SESSION='sharework.session';let session;try{session=JSON.parse(localStorage.getItem(SESSION)||'null');}catch{session=null;}
 let refreshing;
 export function getSession(){return session;}

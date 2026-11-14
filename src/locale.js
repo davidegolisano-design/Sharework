@@ -1,6 +1,7 @@
 const english = {
  "Eliminare questa categoria? I lavori già salvati manterranno il simbolo e la categoria.":"Delete this category? Saved jobs will keep their symbol and category.",
  "Categoria eliminata. Scegli un altro simbolo.":"Category deleted. Choose another symbol.",
+ "Inserisci il nome in italiano e in inglese.":"Enter the name in Italian and English.",
  "Gestione categorie":"Manage categories",
  "Categorie":"Categories",
  "Aggiungi categoria":"Add category",
@@ -316,7 +317,7 @@ const nodes=new Map();
 const attributes=new Map();
 const attrs=['aria-label','placeholder','title'];
 export function locale(){return localStorage.getItem('sw.language')==='en'?'en-GB':'it-IT';}
-export function tr(value){return locale()==='en-GB'?english[value]||value:value;}
+export function tr(value,language=locale()){return language==='en-GB'?english[value]||value:value;}
 export function setLanguage(value){localStorage.setItem('sw.language',value==='en'?'en':'it');}
 export function registerStatic(){
  const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
