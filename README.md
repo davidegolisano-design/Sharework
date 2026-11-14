@@ -62,6 +62,10 @@ Per installare: aprire il sito in Edge/Chrome e premere **Installa app**. Se il 
 
 Il sito pubblico mostra solo l'accesso. I PDF non si trovano nel repository o nella cartella pubblicata: sono nel bucket privato `sharework-pdfs`. Dopo il login vengono scaricati con il token dell'utente, senza URL pubblici permanenti.
 
+## Notifiche di registrazione
+
+Per attivare gli avvisi, applicare `supabase/018_registration_alert.sql` e pubblicare la Edge Function `registration-alert`. Il trigger invia solo l’identificativo dell’account e usa un token generato in Vault. La funzione recupera nome ed email dal server e invia il messaggio a `sharework.reg@liveasta.it` via Aruba SMTP. Per abilitarla aggiungere in Vault il segreto `sw_registration_smtp_password` con la password del mittente Aruba. Se il mittente è diverso dalla destinazione, configurare prima anche `sw_registration_smtp_user` con il suo indirizzo completo. Il trigger parte dalle nuove registrazioni e lascia invariato il flusso di conferma email.
+
 ## App Android
 
 L’APK v10 apre Sharework direttamente a schermo intero e segue la rotazione di sistema. Il pacchetto `it.sgdp.sharework` si può installare accanto al v9. Entrambi accedono allo stesso sito con le credenziali Sharework. Il v10 usa l’icona della PWA e il selettore file di Android per PDF ed Excel.
