@@ -1,5 +1,5 @@
-import {workState} from './work-schedule.js?v=bc794c016fdd';
-import {annotationStrokes,normalizeSearch} from './model.js?v=bc794c016fdd';
+import {workState} from './work-schedule.js?v=665fdd14474d';
+import {annotationStrokes,normalizeSearch} from './model.js?v=665fdd14474d';
 export const workCategories=[
  ['scaffolding','🪜','Ponteggio'],['hot_work','🔥','Lavoro a caldo'],['lifting','🏗️','Sollevamento'],
  ['mechanical','⚙️','Meccanica'],['pipework','🚰','Tubisteria'],['electrical','⚡','Elettrico'],

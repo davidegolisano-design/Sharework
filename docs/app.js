@@ -1,13 +1,13 @@
-import {workStates,workState,localDateTime} from './work-schedule.js?v=bc794c016fdd';
-import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=bc794c016fdd';
-import {projectCover} from './cards.js?v=bc794c016fdd';
-import {watchChanges} from './realtime.js?v=bc794c016fdd';
-import * as api from './api.js?v=bc794c016fdd';
-import {Viewer,loadPdf,marker,drawLaser} from './viewer.js?v=bc794c016fdd';
-import {snapshot,grouped,clamp,annotationStrokes,normalizeSearch,searchRanges} from './model.js?v=bc794c016fdd';
-import {filterNotes,noteShapes,noteCategory,geometricSymbols,workCategories,setWorkCatalog,categoryLabel,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js?v=bc794c016fdd';
-import {finishRegion,legacyRegions} from './work-regions.js?v=bc794c016fdd';
-import {editShipPlan} from './ship-editor.js?v=bc794c016fdd';
+import {workStates,workState,localDateTime} from './work-schedule.js?v=665fdd14474d';
+import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=665fdd14474d';
+import {projectCover} from './cards.js?v=665fdd14474d';
+import {watchChanges} from './realtime.js?v=665fdd14474d';
+import * as api from './api.js?v=665fdd14474d';
+import {Viewer,loadPdf,marker,drawLaser} from './viewer.js?v=665fdd14474d';
+import {snapshot,grouped,clamp,annotationStrokes,normalizeSearch,searchRanges} from './model.js?v=665fdd14474d';
+import {filterNotes,noteShapes,noteCategory,geometricSymbols,workCategories,setWorkCatalog,categoryLabel,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js?v=665fdd14474d';
+import {finishRegion,legacyRegions} from './work-regions.js?v=665fdd14474d';
+import {editShipPlan} from './ship-editor.js?v=665fdd14474d';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
 let stopRealtime=null,refreshTimer,realtimeConnected=false,lastSafetyCheck=0,annotationRevision=0;
 const pendingSync=new Set();
@@ -585,37 +585,29 @@ $('mobile-tools').open=!phoneLayout.matches;
 $('workspace-body').addEventListener('pointerdown',e=>{if(e.target.closest('#viewport'))$('mobile-tools').open=!phoneLayout.matches;});
 $('print-view').onclick=()=>{
  if(!activeDocument||loading||areaSession||!viewer.pdfPage||!plan())return;
- const configuration=plan(), current=viewer.pageNumber, sourcePdf=pdf;
+ const configuration=plan(), current=viewer.pageNumber, printPage=viewer.pdfPage;
  const box=modal(tr('Stampa PDF'));
  const choices=text('div','','print-options');
  const message=text('p','','muted');
  message.setAttribute('role','status');
- const deckSelect=document.createElement('select');
- const deckLabel=text('label',tr('Ponte da stampare'));
- deckLabel.append(deckSelect);
- selectOptions(deckSelect,configuration.decks.map(deck=>[deck.page,deck.name]));
- if(current!==configuration.overview.page)deckSelect.value=current;
- deckLabel.hidden=current!==configuration.overview.page;
  const button=$('print-view');
- function option(label,getPage,partial=false){
+ function option(label,crop){
   const choice=btn(tr(label),async()=>{
-   const target=getPage();
-   if(!target||pdf!==sourcePdf||loading)return;
+   if(loading||viewer.pdfPage!==printPage||viewer.pageNumber!==current)return;
    const filtered=visiblePlanNotes();
-   const marks=marksForPage(configuration,filtered,target);
-   const laserMark=laser&&laserOnPage(configuration,target,laser);
-   const title=[project.title,pageName(target)].join(' · ');
+   const marks=marksForPage(configuration,filtered,current);
+   const laserMark=laser&&laserOnPage(configuration,current,laser);
+   const title=[project.title,pageName(current)].join(' · ');
    const width=visiblePlanWidth(),height=viewer.container.clientHeight;
    const currentRect=viewer.rect();
    button.disabled=true;
    for(const item of choices.querySelectorAll('button'))item.disabled=true;
    message.textContent=tr('Preparazione PDF…');
    try{
-    const [{printPlan},printPage]=await Promise.all([import('./plan-print.js?v=bc794c016fdd'),sourcePdf.getPage(target)]);
+    const {printPlan}=await import('./plan-print.js?v=665fdd14474d');
     const base=printPage.getViewport({scale:1});
     const scale=1200/Math.max(base.width,base.height);
     const full={x:0,y:0,w:base.width*scale,h:base.height*scale,scale};
-    const crop=partial&&target===current;
     await printPlan({
      page:printPage,rect:crop?currentRect:full,width:crop?width:full.w,height:crop?height:full.h,title,tr,
      drawOverlay(ctx,rect){
@@ -631,13 +623,10 @@ $('print-view').onclick=()=>{
    }
   });
   choices.append(choice);
-  return choice;
  }
- option('Vista corrente',()=>current,true);
- option('Tutto il ponte',()=>current===configuration.overview.page?Number(deckSelect.value):current)
-  .disabled=!configuration.decks.length;
- option('Tutta la General Overview',()=>configuration.overview.page);
- box.append(deckLabel,choices,message);
+ option('Pagina intera',false);
+ option('Vista corrente',true);
+ box.append(choices,message);
 };
 $('export-works').onclick=async()=>{
  if(!activeDocument||!project||!canExportWorks())return;
@@ -646,7 +635,7 @@ $('export-works').onclick=async()=>{
  const name=page=>configuration?.decks.find(deck=>deck.page===page)?.name||tr('Pagina')+' '+page;
  button.disabled=true;
  try{
-  const {exportWorks}=await import('./work-export.js?v=bc794c016fdd');
+  const {exportWorks}=await import('./work-export.js?v=665fdd14474d');
   if(canExportWorks()&&!$('workspace').hidden)await exportWorks(works,configuration,title,name,tr,locale());
  }catch(error){report(error);}
  finally{button.disabled=false;}
