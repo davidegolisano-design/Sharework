@@ -18,3 +18,8 @@ const pdf=path.dirname(require.resolve('pdfjs-dist/package.json'));
 await mkdir('dist/vendor',{recursive:true});
 for(const name of ['build/pdf.mjs','build/pdf.worker.mjs','cmaps','standard_fonts','wasm','iccs','LICENSE'])await cp(path.join(pdf,name),path.join('dist/vendor',name),{recursive:true});
 console.log('Sharework build ready: dist');
+
+const {build}=await import('esbuild');
+for(const [dependency,file] of [['polygon-clipping','polygon-union.js'],['write-excel-file/browser','workbook.js']]){
+ await build({entryPoints:[require.resolve(dependency)],bundle:true,minify:true,format:'esm',platform:'browser',outfile:'dist/vendor/'+file});
+}

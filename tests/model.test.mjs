@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {grouped,normalized,segmentDistance,snapshot,touchPart,touchSelection} from '../src/model.js';
+import test from 'node:test';import assert from 'node:assert/strict';import {grouped,normalized,segmentDistance,snapshot,touchSelection} from '../src/model.js';
 test('Grouping, normalized coordinates and hit detection',()=>{
  const a=[{id:1,page:3,created_at:'a'},{id:2,page:1,created_at:'b'},{id:3,page:1,created_at:'a'},{id:4,page:1,created_at:'c',deleted:true}];
  assert.deepEqual(grouped(a,1,false).map(x=>x.id),[3,2]);assert.deepEqual(grouped(a,1,true).map(x=>x.id),[3,2,1]);
@@ -6,7 +6,7 @@ test('Grouping, normalized coordinates and hit detection',()=>{
 });
 
 
-import {filterNotes,projectMarks,shipPageOrder,mapDeckView,longitudinalScale,placeLaser,laserOnPage} from '../src/ship-model.js';
+import {filterNotes,projectMarks,shipPageOrder,mapDeckView,longitudinalScale,placeLaser,laserOnPage,frameAt,deckReferences,workFrameRange} from '../src/ship-model.js';
 
 test('Ship plans project a shared frame across scales and orientations',()=>{
  const overview={page:1,frame0:0,frame1:74,x0:.2,x1:.6,meters:51.06};
@@ -74,23 +74,30 @@ test('A multi-stroke note projects separate intervals under one note identity',(
  assert.ok(mark.strokes[0][1][0]<mark.strokes[1][0][0]);
 });
 
-test('Touch areas form a group even when only one area contains the tap',()=>{
- const marker=(id,x,y)=>({id,parts:[touchPart(x,y,x,y,20)]});
- const front=marker('front',0,0);
- const hidden=marker('hidden',38,0);
- const behind=marker('behind',78,0);
- const detached=marker('detached',119,0);
- const diagonal=marker('diagonal',-39,39);
- assert.deepEqual(touchSelection([front,hidden,behind,detached,diagonal],-15,0).map(item=>item.id),['front','hidden','behind']);
- assert.deepEqual(touchSelection([front,hidden],0,40),[]);
+test('Tap selects only work directly reached by the fixed circle',()=>{
+ const marker=(id,x)=>({id,distance:tapX=>Math.abs(tapX-x)-14});
+ const items=[marker(1,0),marker(2,38),marker(3,76)];
+ assert.deepEqual(touchSelection(items,0,0).map(item=>item.id),[1,2]);
+ assert.deepEqual(touchSelection(items,40,0).map(item=>item.id),[2,3]);
+ assert.deepEqual(touchSelection(items,-40,0),[]);
 });
 
-test('Touch groups follow actual highlight paths, including crossings',()=>{
- const stroke=(id,...coords)=>({id,parts:[touchPart(...coords,12)]});
- const first=stroke('first',0,0,200,0);
- const crossing=stroke('crossing',100,-100,100,100);
- const nearby=stroke('nearby',124,70,200,70);
- const outside=stroke('outside',160,-30,200,-30);
- const separate=stroke('separate',125,-65,200,-65);
- assert.deepEqual(touchSelection([first,crossing,nearby,outside,separate],10,4).map(item=>item.id),['first','crossing','nearby']);
+test('Areas span the requested decks and keep one icon centered on the origin deck',()=>{
+ const calibration={frame0:0,frame1:74,x0:.2,x1:.6,meters:51.06};
+ const plan={overview:{...calibration,page:1,top:.1},decks:[
+  {...calibration,page:4,base:.3,name:'Top'},
+  {...calibration,page:3,base:.5,name:'Middle'},
+  {...calibration,page:2,base:.7,name:'Bottom'}
+ ]};
+ const note={id:1,page:3,x:.4,y:.45,decks_above:1,decks_below:1,
+  regions:[[[.3,.1],[.5,.1],[.5,.2],[.3,.2]]]};
+ const [projected]=projectMarks(plan,[note]);
+ assert.equal(projected.y,.4);
+ assert.equal(projected.regions[0][0][1],.1);
+ assert.equal(projected.regions[0][2][1],.7);
+ const [reference]=deckReferences(plan,[note],2);
+ assert.equal(reference.id,1);
+ assert.deepEqual(reference.regions,[]);
+ assert.deepEqual(workFrameRange(plan.decks[1],note),[18.5,55.5]);
+ assert.equal(frameAt({...calibration,x0:.6,x1:.2},.4),37);
 });

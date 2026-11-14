@@ -1,11 +1,12 @@
-import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=a28ad93bdcd6';
-import {projectCover} from './cards.js?v=a28ad93bdcd6';
-import {watchChanges} from './realtime.js?v=a28ad93bdcd6';
-import * as api from './api.js?v=a28ad93bdcd6';
-import {Viewer,loadPdf,marker} from './viewer.js?v=a28ad93bdcd6';
-import {snapshot,grouped,clamp,annotationStrokes} from './model.js?v=a28ad93bdcd6';
-import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,placeLaser,laserOnPage} from './ship-model.js?v=a28ad93bdcd6';
-import {editShipPlan} from './ship-editor.js?v=a28ad93bdcd6';
+import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=0f9a44514d9c';
+import {projectCover} from './cards.js?v=0f9a44514d9c';
+import {watchChanges} from './realtime.js?v=0f9a44514d9c';
+import * as api from './api.js?v=0f9a44514d9c';
+import {Viewer,loadPdf,marker} from './viewer.js?v=0f9a44514d9c';
+import {snapshot,grouped,clamp,annotationStrokes} from './model.js?v=0f9a44514d9c';
+import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js?v=0f9a44514d9c';
+import {finishRegion,legacyRegions} from './work-regions.js?v=0f9a44514d9c';
+import {editShipPlan} from './ship-editor.js?v=0f9a44514d9c';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
 let stopRealtime=null,refreshTimer,realtimeConnected=false,lastSafetyCheck=0,annotationRevision=0;
 const pendingSync=new Set();
@@ -27,7 +28,7 @@ let finishPick = null;
 let areaSession = null;
 let lastDeckView = null;
 let laser = null;
-const viewer=new Viewer($('viewport'),$('pdf-canvas'),$('marks-canvas'),{create:a=>makeAnnotation(a).catch(report),edit:items=>openMarkers(items).catch(report),error:report,laser:setLaserPoint,stroke:addAreaStroke});
+const viewer=new Viewer($('viewport'),$('pdf-canvas'),$('marks-canvas'),{create:a=>makeAnnotation(a).catch(report),edit:items=>openMarkers(items).catch(report),error:report,laser:setLaserPoint,stroke:addAreaStroke,vertex:addAreaVertex});
 const setupViewer=new Viewer($('setup-viewport'),$('setup-pdf'),$('setup-marks'),{error:report});
 let setupPdf,closeSetup,setupLoading=false;
 $('setup-fit').onclick=()=>setupViewer.fit();
@@ -494,7 +495,11 @@ $('fit').onclick=()=>{
  const view=viewer.viewCenter(visibleWidth);
  viewer.centerView(clamp(view?.x??.5,0,1),.5,{visibleWidth,fitHeight:true});
 };$('note-tool').onclick=()=>mode('note');
-function applyPanel(){const available=$('workspace-body').clientWidth;const width=clamp(panelWidth,160,Math.max(160,available-180));$('notes-panel').hidden=panelHidden;$('notes-panel').style.width=width+'px';$('workspace-body').style.setProperty('--notes-width',width+'px');$('panel-toggle').setAttribute('aria-expanded',String(!panelHidden));$('mobile-notes').setAttribute('aria-expanded',String(!panelHidden));$('panel-toggle').textContent=panelHidden?'◂':'▸';}
+function panelMaxWidth(){
+ const available=$('workspace-body').clientWidth;
+ return Math.max(160,phoneLayout.matches?Math.floor(available*.86):available-180);
+}
+function applyPanel(){const width=clamp(panelWidth,160,panelMaxWidth());$('notes-panel').hidden=panelHidden;$('notes-panel').style.width=width+'px';$('workspace-body').style.setProperty('--notes-width',width+'px');$('divider').classList.toggle('notes-closed',panelHidden);$('panel-toggle').setAttribute('aria-expanded',String(!panelHidden));$('mobile-notes').setAttribute('aria-expanded',String(!panelHidden));$('panel-toggle').textContent=panelHidden?'◂':'▸';}
 function toggleNotes(){panelHidden=!panelHidden;applyPanel();}
 $('panel-toggle').onclick=$('mobile-notes').onclick=toggleNotes;
 phoneLayout.addEventListener('change',()=>{panelHidden=phoneLayout.matches;$('mobile-tools').open=!phoneLayout.matches;applyPanel();});
@@ -503,11 +508,24 @@ $('workspace-body').addEventListener('pointerdown',e=>{if(e.target.closest('#vie
 $('touch-areas').onclick=()=>{
  viewer.showTouchAreas=!viewer.showTouchAreas;
  $('touch-areas').setAttribute('aria-pressed',String(viewer.showTouchAreas));
+ if(!viewer.showTouchAreas)viewer.touchPoint=null;
  viewer.draw(false);
+};
+$('export-works').onclick=async()=>{
+ if(!activeDocument||!project)return;
+ const button=$('export-works');
+ const works=annotations, configuration=plan(), title=project.title;
+ const name=page=>configuration?.decks.find(deck=>deck.page===page)?.name||tr('Pagina')+' '+page;
+ button.disabled=true;
+ try{
+  const {exportWorks}=await import('./work-export.js?v=0f9a44514d9c');
+  await exportWorks(works,configuration,title,name,tr,locale());
+ }catch(error){report(error);}
+ finally{button.disabled=false;}
 };
 $('mobile-tools').addEventListener('click',e=>{if(phoneLayout.matches&&e.target.closest('button'))$('mobile-tools').open=false;});
 let resizeStart;
-$('divider').onpointerdown=e=>{if(e.target===$('panel-toggle')||panelHidden)return;e.preventDefault();$('divider').setPointerCapture(e.pointerId);resizeStart={x:e.clientX,width:$('notes-panel').offsetWidth};};$('divider').onpointermove=e=>{if(resizeStart){panelWidth=clamp(resizeStart.width+resizeStart.x-e.clientX,160,Math.max(160,$('workspace-body').clientWidth-180));applyPanel();}};$('divider').onpointerup=$('divider').onpointercancel=()=>{if(resizeStart)localStorage.setItem('sw.panelWidth',panelWidth);resizeStart=null;};$('divider').onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();panelWidth+=e.key==='ArrowLeft'?15:-15;applyPanel();localStorage.setItem('sw.panelWidth',panelWidth);}};
+$('divider').onpointerdown=e=>{if(e.target===$('panel-toggle')||panelHidden)return;e.preventDefault();$('divider').setPointerCapture(e.pointerId);resizeStart={x:e.clientX,width:$('notes-panel').offsetWidth};};$('divider').onpointermove=e=>{if(resizeStart){panelWidth=clamp(resizeStart.width+resizeStart.x-e.clientX,160,panelMaxWidth());applyPanel();}};$('divider').onpointerup=$('divider').onpointercancel=()=>{if(resizeStart)localStorage.setItem('sw.panelWidth',panelWidth);resizeStart=null;};$('divider').onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();panelWidth=clamp($('notes-panel').offsetWidth+(e.key==='ArrowLeft'?15:-15),160,panelMaxWidth());applyPanel();localStorage.setItem('sw.panelWidth',panelWidth);}};
 window.addEventListener('resize',applyPanel);$('toolbar-toggle').onclick=()=>{$('toolbar').hidden=!$('toolbar').hidden;$('toolbar-toggle').textContent=$('toolbar').hidden?'▾':'▴';};
 $('notes-scope').onchange=()=>{
  all=$('notes-scope').value==='all';
@@ -542,18 +560,20 @@ function refreshList(){
  const [query,pageFilter,kind,author,day]=filterIds.map(id=>$(id).value);
  const filtered=filterNotes(annotations,{query,page:pageFilter,kind,author,day});
  const projected=overview?projectMarks(plan(),filtered):[];
- const marks=overview?[...filtered.filter(a=>a.page===viewer.pageNumber),...projected]:filtered;
+ const references=!overview&&plan()?deckReferences(plan(),filtered,viewer.pageNumber):[];
+ const marks=overview?[...filtered.filter(a=>a.page===viewer.pageNumber),...projected]:[...filtered,...references];
  refreshLaser(false);
  viewer.setMarks(marks);
  const projectedIds=new Set(projected.map(a=>a.id));
  const showAll=all||!!pageFilter;
  const list=overview&&!showAll
   ? grouped(filtered.filter(a=>projectedIds.has(a.id)||a.page===viewer.pageNumber),viewer.pageNumber,true)
-  : grouped(filtered,viewer.pageNumber,showAll);
+  : grouped(showAll?filtered:[...filtered,...references],viewer.pageNumber,showAll);
  if(plan())list.sort((a,b)=>order.indexOf(a.page)-order.indexOf(b.page));
  selectOptions($('notes-scope'),[['current',tr(overview?'Overview':'Ponte attuale')],['all',tr('Tutte')]]);
  $('notes-scope').value=all?'all':'current';
  $('notes-list').replaceChildren();
+ const referenceOrigins=new Map(references.length?annotations.map(note=>[note.id,note]):[]);
  let previous=-1;
  for(const a of list){
   if((showAll||overview)&&a.page!==previous){
@@ -564,10 +584,17 @@ function refreshList(){
   open.append(text('span',a.title||(a.kind==='note'?tr('Nota')+' '+a.number:tr('Evidenziazione')),'annotation-title'));
   if(a.description)open.append(text('span',a.description,'annotation-description'));
   open.append(text('span',a.author_name+' · '+date(a.created_at),'annotation-author'));
+  const origin=a.deckReference?(referenceOrigins.get(a.id)||a):a;
+  const sheet=plan()?.decks.find(deck=>deck.page===origin.page);
+  const frame=frameAt(sheet,origin.x);
+  const [start,end]=workFrameRange(sheet,origin);
+  const frameNumber=new Intl.NumberFormat(locale(),{maximumFractionDigits:2});
+  const range=start==null?'':(' · '+frameNumber.format(start)+'–'+frameNumber.format(end));
+  if(frame!=null)open.append(text('span',tr('Ordinata')+' '+frameNumber.format(frame)+range,'annotation-author'));
   const b=badge(a);
   b.onclick=()=>openListedNote(a).catch(report);
   row.append(b,open);
-  if(canWrite())row.append(btn('⋮',()=>annotationMenu(a),'more'));
+  if(canWrite())row.append(btn('⋮',()=>annotationMenu(annotations.find(note=>note.id===a.id)||a),'more'));
   $('notes-list').append(row);
  }
  if(!list.length)$('notes-list').append(text('div',tr('Nessuna annotazione'),'empty'));
@@ -622,7 +649,7 @@ async function goToNote(note){
  if(dialogOpen||finishPick||loading||areaSession)return;
  await page(note.page);
  if(viewer.pageNumber!==note.page)return;
- const [points]=annotationStrokes(note);
+ const [points]=note.regions?.length?[]:annotationStrokes(note);
  const target=points?.length?points[Math.floor(points.length/2)]:[note.x,note.y];
  viewer.focus(...target,visiblePlanWidth());
 }
@@ -675,12 +702,12 @@ async function openAnnotation(initial,before=initial){
   if(!dialogOpen)await toolSettings(current);
  }));
  if(current.kind==='note'){
-  $('dialog-footer').append(btn(tr(current.strokes?.length?'Modifica area':'Evidenzia area'),async()=>{
+  $('dialog-footer').append(btn(tr(current.regions?.length||current.strokes?.length?'Modifica area':'Evidenzia area'),async()=>{
    await closeModal();
    if(!dialogOpen)await startArea(current);
   }));
  }
- if(current.kind==='note'&&!current.strokes?.length&&current.page===viewer.pageNumber&&canPlace()){
+ if(current.kind==='note'&&current.page===viewer.pageNumber&&canPlace()){
   $('dialog-footer').append(btn(tr('Sposta punto'),async()=>{
    await closeModal();
    if(dialogOpen)return;
@@ -712,10 +739,20 @@ async function startArea(note){
  mode(null);
  laser=null;
  refreshLaser();
- const strokes=structuredClone(note.strokes||[]);
- const style=strokes.length?note:viewer.settings.highlight;
- areaSession={note,strokes,color:strokes.length?note.color:style.color,width:style.width,opacity:strokes.length?note.opacity:style.opacity};
- viewer.areaDraft={...areaSession,id:note.id};
+ const rect=viewer.rect();
+ const regions=structuredClone(note.regions?.length?note.regions:
+  legacyRegions(annotationStrokes(note),note.width,rect.w/rect.scale,rect.h/rect.scale));
+ const ordered=[...(plan()?.decks||[])].sort((a,b)=>a.base-b.base);
+ const index=ordered.findIndex(deck=>deck.page===note.page);
+ const choices=decks=>[[0,tr('Nessuno')],...decks.map((deck,i)=>[i+1,deck.name])];
+ selectOptions($('area-above'),choices(ordered.slice(0,index).reverse()));
+ selectOptions($('area-below'),choices(ordered.slice(index+1)));
+ $('area-above').value=String(Math.min(note.decks_above||0,index));
+ $('area-below').value=String(Math.min(note.decks_below||0,ordered.length-index-1));
+ $('area-tool').value='rectangle';
+ areaSession={note,regions,vertices:[],tool:'rectangle',color:note.color};
+ viewer.areaDraft=areaSession;
+ areaSession.id=note.id;
  viewer.mode='area';
  $('area-banner').hidden=false;
  updateAreaControls();
@@ -724,46 +761,63 @@ async function startArea(note){
 
 function updateAreaControls(){
  if(!areaSession)return;
- const {strokes,saving}=areaSession;
- $('area-count').textContent=tr('Tratti')+': '+strokes.length;
- $('area-undo').disabled=Boolean(saving)||!strokes.length;
+ const {regions,vertices,tool,saving}=areaSession;
+ $('area-count').textContent=tr('Forme')+' · '+regions.length;
+ $('area-undo').disabled=Boolean(saving)||!(regions.length||vertices.length);
  $('area-clear').disabled=$('area-undo').disabled;
- for(const id of ['area-save','area-cancel','area-pan','area-color','area-width','area-transparency'])$(id).disabled=Boolean(saving);
+ $('area-finish').hidden=tool!=='polygon';
+ $('area-finish').disabled=Boolean(saving)||vertices.length<3;
+ for(const id of ['area-save','area-cancel','area-pan','area-color','area-tool','area-above','area-below'])$(id).disabled=Boolean(saving);
  $('area-color').value=areaSession.color;
- $('area-width').value=areaSession.width;
- $('area-width-value').value=areaSession.width;
- $('area-transparency').value=100-areaSession.opacity;
- $('area-transparency-value').value=(100-areaSession.opacity)+'%';
  $('area-pan').setAttribute('aria-pressed',String(viewer.mode!=='area'));
  viewer.draw(false);
 }
 
 function addAreaStroke(points){
- if(!areaSession||areaSession.saving||points.length<2)return;
- const {strokes}=areaSession;
- if(strokes.length>=100||strokes.reduce((count,stroke)=>count+stroke.length,0)+points.length>20000){
-  toast(tr('Limite di tratti raggiunto.'));
-  return;
+ if(!areaSession||areaSession.saving)return false;
+ const region=finishRegion(points);
+ if(!region)return false;
+ const {regions}=areaSession;
+ if(regions.length>=100||regions.reduce((count,ring)=>count+ring.length,0)+region.length>20000){
+  toast(tr('Limite di forme raggiunto.'));
+  return false;
  }
- strokes.push(points);
+ regions.push(region);
+ updateAreaControls();
+ return true;
+}
+
+function addAreaVertex(point){
+ if(!areaSession||areaSession.saving||areaSession.vertices.length>=2000)return;
+ areaSession.vertices.push(point);
  updateAreaControls();
 }
 
+$('area-finish').onclick=()=>{
+ if(!areaSession)return;
+ if(!addAreaStroke(areaSession.vertices)){toast(tr('Punti del poligono non validi.'));return;}
+ areaSession.vertices.length=0;
+ updateAreaControls();
+};
 $('area-pan').onclick=()=>{
  if(!areaSession)return;
  viewer.mode=viewer.mode==='area'?null:'area';
  updateAreaControls();
 };
-function setAreaStyle(property,value){
- if(!areaSession||areaSession.saving)return;
- areaSession[property]=viewer.areaDraft[property]=value;
+$('area-tool').onchange=()=>{
+ if(!areaSession)return;
+ if(areaSession.vertices.length){$('area-tool').value=areaSession.tool;toast(tr('Chiudi il poligono o rimuovi i punti.'));return;}
+ areaSession.tool=$('area-tool').value;
+ viewer.mode='area';
  updateAreaControls();
-}
-$('area-color').oninput=()=>setAreaStyle('color',$('area-color').value);
-$('area-width').oninput=()=>setAreaStyle('width',$('area-width').valueAsNumber);
-$('area-transparency').oninput=()=>setAreaStyle('opacity',100-$('area-transparency').valueAsNumber);
-$('area-undo').onclick=()=>{areaSession?.strokes.pop();updateAreaControls();};
-$('area-clear').onclick=()=>{if(areaSession)areaSession.strokes.length=0;updateAreaControls();};
+};
+$('area-color').oninput=()=>{if(areaSession){areaSession.color=$('area-color').value;updateAreaControls();}};
+$('area-undo').onclick=()=>{
+ if(!areaSession)return;
+ if(areaSession.vertices.length)areaSession.vertices.pop();else areaSession.regions.pop();
+ updateAreaControls();
+};
+$('area-clear').onclick=()=>{if(areaSession){areaSession.regions.length=areaSession.vertices.length=0;updateAreaControls();}};
 $('area-cancel').onclick=()=>{
  const note=areaSession?.note;
  stopArea();
@@ -773,12 +827,14 @@ $('area-cancel').onclick=()=>{
 $('area-save').onclick=async()=>{
  const session=areaSession;
  if(!session||session.saving)return;
+ if(session.vertices.length){toast(tr('Chiudi il poligono o rimuovi i punti.'));return;}
  session.saving=true;
  viewer.mode=null;
  updateAreaControls();
  try{
-  const {note,strokes,color,width,opacity}=session;
-  const fields=strokes.length?{strokes,color,width,opacity}:{strokes};
+  const {note,regions,color}=session;
+  const fields={regions,strokes:[],color,decks_above:regions.length?Number($('area-above').value):0,
+   decks_below:regions.length?Number($('area-below').value):0};
   const after=await patch(note,fields);
   if(areaSession!==session)return;
   stopArea();
@@ -827,7 +883,8 @@ async function annotationMenu(annotation){
 async function toolSettings(existing=null){
  if(!canWrite()||finishPick||areaSession||(!existing&&!canPlace()))return;
  const choice=structuredClone(existing||viewer.settings.note);
- const hasArea=Boolean(existing&&annotationStrokes(existing).length);
+ const hasRegion=Boolean(existing?.regions?.length);
+ const hasArea=hasRegion||Boolean(existing&&annotationStrokes(existing).length);
  const box=modal(tr(existing?.kind==='highlight'?'Impostazioni evidenziatore':'Impostazioni nota'));
  const canvas=document.createElement('canvas');
  canvas.className='settings-preview';canvas.width=430;canvas.height=65;
@@ -838,7 +895,9 @@ async function toolSettings(existing=null){
  function preview(){
   const ctx=canvas.getContext('2d');
   ctx.clearRect(0,0,430,65);
-  if(hasArea){
+  if(hasRegion){
+   viewer.drawRegions(ctx,{x:40,y:14,w:350,h:36},[[[0,0],[1,0],[1,1],[0,1]]],choice.color,false);
+  }else if(hasArea){
    ctx.strokeStyle=choice.color;ctx.globalAlpha=choice.opacity/100;
    ctx.lineWidth=choice.width;ctx.lineCap='round';
    ctx.beginPath();ctx.moveTo(40,32);ctx.lineTo(390,32);ctx.stroke();
@@ -871,7 +930,7 @@ async function toolSettings(existing=null){
   options.append(button);
  }
  box.append(options);
- if(hasArea){
+ if(hasArea&&!hasRegion){
   const width=field(box,tr('Spessore')+': '+choice.width,{type:'range',value:choice.width,min:2,max:60,step:1});
   width.oninput=()=>{
    choice.width=Number(width.value);
@@ -889,7 +948,7 @@ async function toolSettings(existing=null){
  $('dialog-footer').append(btn(tr('Applica'),async()=>{
   const changes={shape:choice.shape};
   if(hasArea||!emojiSymbols[choice.shape])changes.color=choice.color;
-  if(hasArea){changes.width=choice.width;changes.opacity=choice.opacity;}
+  if(hasArea&&!hasRegion){changes.width=choice.width;changes.opacity=choice.opacity;}
   if(existing){
    const after=await patch(existing,changes);
    record(existing,after);

@@ -1,12 +1,24 @@
 import * as pdfjs from './vendor/build/pdf.mjs';
-import {normalized,contrast,clamp,annotationStrokes,touchPart,touchSelection} from './model.js?v=a28ad93bdcd6';
+import {normalized,contrast,clamp,annotationStrokes,segmentDistance,pointInRing,clickRadius,touchSelection} from './model.js?v=0f9a44514d9c';
 pdfjs.GlobalWorkerOptions.workerSrc=new URL('./vendor/build/pdf.worker.mjs',import.meta.url).href;
 const vendor=new URL('./vendor/',import.meta.url).href;
 export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendor+'cmaps/',cMapPacked:true,standardFontDataUrl:vendor+'standard_fonts/',wasmUrl:vendor+'wasm/',iccUrl:vendor+'iccs/',isEvalSupported:false}).promise;}
-import {emojiSymbols} from './ship-model.js?v=a28ad93bdcd6';
+import {emojiSymbols} from './ship-model.js?v=0f9a44514d9c';
 const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
-const touchMargin=12;
+import polygonClipping from './vendor/polygon-union.js';
+import {rectangularRegion} from './work-regions.js?v=0f9a44514d9c';
+const regionCache=new WeakMap();
+function unionRegions(regions){
+ if(!regions?.length)return [];
+ if(!regionCache.has(regions)){
+  const polygons=regions.map(ring=>[ring]);
+  try{regionCache.set(regions,polygonClipping.union(...polygons));}
+  catch{regionCache.set(regions,polygons);}
+ }
+ return regionCache.get(regions);
+}
+const pixelsOnPage=(points,rect)=>points.map(([x,y])=>[rect.x+x*rect.w,rect.y+y*rect.h]);
 const projectedOffset=markerRadius+5;
 
 export function marker(ctx,x,y,color,shape,number,r=markerRadius){
@@ -30,11 +42,9 @@ export function marker(ctx,x,y,color,shape,number,r=markerRadius){
   const size=r*1.4;
   ctx.translate(x-size/2,y-size/2);ctx.scale(size/24,size/24);
   ctx.fill(highlightPath);
- }else if(number){
-  ctx.font='700 12px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
-  ctx.fillText(number,x,y+(shape==='triangle'?2:0),r*1.4);
  }
  ctx.restore();
+ if(number!=null)numberBadge(ctx,x+r*.65,y+r*.45+6.5,number);
 }
 
 export function numberBadge(ctx,x,y,number){
@@ -73,30 +83,49 @@ function markPosition(annotation,rect){
  return [annotation.projected?(pixels[0][0]+pixels.at(-1)[0])/2:x,y-Math.min(13,width/2)-8];
 }
 
-function markerTouchParts(annotation,rect){
- const [x,y]=markPosition(annotation,rect);
- const parts=[touchPart(x,y,x,y,markerRadius*1.3+2+touchMargin)];
- if(emojiSymbols[annotation.shape]&&annotation.number!=null){
-  const badgeX=x+markerRadius*.65,badgeY=y+markerRadius*.45+6.5;
-  const halfSpan=Math.max(0,String(annotation.number).length*4+3-6.5);
-  parts.push(touchPart(badgeX-halfSpan,badgeY,badgeX+halfSpan,badgeY,7.5+touchMargin));
- }
- return parts;
+function pathDistance(x,y,points,closed=false){
+ let distance=Infinity;
+ for(let i=1;i<points.length;i++)distance=Math.min(distance,segmentDistance(x,y,...points[i-1],...points[i]));
+ if(closed)distance=Math.min(distance,segmentDistance(x,y,...points[0],...points.at(-1)));
+ if(points.length===1)distance=Math.hypot(x-points[0][0],y-points[0][1]);
+ return distance;
 }
 
-function annotationTouchParts(annotation,rect){
- const parts=markerTouchParts(annotation,rect);
+function markDistance(annotation,rect,x,y){
+ const [cx,cy]=markPosition(annotation,rect);
+ const radius=markerRadius+2;
+ let distance;
+ if(!annotation.shape||annotation.shape==='circle'){
+  distance=Math.hypot(x-cx,y-cy)-radius;
+ }else if(emojiSymbols[annotation.shape]){
+  distance=Math.hypot(x-cx,y-cy)-markerRadius*.95;
+ }else{
+  const r=markerRadius;
+  const offsets=annotation.shape==='triangle'?[[0,-r*1.3],[r*1.2,r],[-r*1.2,r]]
+   :annotation.shape==='diamond'?[[0,-r*1.3],[r*1.3,0],[0,r*1.3],[-r*1.3,0]]
+   :[[-r,-r],[r,-r],[r,r],[-r,r]];
+  const ring=offsets.map(([dx,dy])=>[cx+dx,cy+dy]);
+  distance=pointInRing(x,y,ring)?0:pathDistance(x,y,ring,true)-2;
+ }
+ if(annotation.number!=null){
+  const dx=Math.max(0,Math.abs(x-cx-markerRadius*.65)-Math.max(7,String(annotation.number).length*4+3));
+  const dy=Math.max(0,Math.abs(y-cy-markerRadius*.45-6.5)-7.25);
+  distance=Math.min(distance,Math.hypot(dx,dy));
+ }
  for(const stroke of annotationStrokes(annotation)){
   const {width,pixels}=highlightGeometry(annotation,rect,stroke);
-  const radius=width/2+touchMargin;
-  if(pixels.length===1)parts.push(touchPart(...pixels[0],...pixels[0],radius));
-  for(let i=1;i<pixels.length;i++)parts.push(touchPart(...pixels[i-1],...pixels[i],radius));
+  distance=Math.min(distance,pathDistance(x,y,pixels)-width/2);
  }
- return parts;
+ for(const polygon of unionRegions(annotation.regions)){
+  const rings=polygon.map(ring=>pixelsOnPage(ring,rect));
+  if(pointInRing(x,y,rings[0])&&!rings.slice(1).some(ring=>pointInRing(x,y,ring)))return 0;
+  for(const ring of rings)distance=Math.min(distance,pathDistance(x,y,ring,true)-1);
+ }
+ return distance;
 }
 
 function markerY(annotation,rect){
- const clearance=annotation.projected ? projectedOffset+(annotation.shape==='diamond'?markerRadius*.3:0)+(emojiSymbols[annotation.shape]?4:0) : 0;
+ const clearance=annotation.projected&&!annotation.centered ? projectedOffset+(annotation.shape==='diamond'?markerRadius*.3:0)+(emojiSymbols[annotation.shape]?4:0) : 0;
  return rect.y+annotation.y*rect.h-clearance;
 }
 
@@ -135,7 +164,7 @@ export class Viewer{
   };
  }
  async open(pdf,page=1){this.clear();this.pdf=pdf;await this.page(page);}
- clear(){this.pageRequest=(this.pageRequest||0)+1;this.revision++;clearTimeout(this.timer);this.task?.cancel();this.pdf=null;this.pdfPage=null;this.detail=null;this.marks=[];this.areaDraft=null;this.laser=null;this.pick=null;this.guides=[];this.mode=null;this.resetGesture(false);this.draw();}
+ clear(){this.pageRequest=(this.pageRequest||0)+1;this.revision++;clearTimeout(this.timer);this.task?.cancel();this.pdf=null;this.pdfPage=null;this.detail=null;this.marks=[];this.areaDraft=null;this.touchPoint=null;clearTimeout(this.touchTimer);this.laser=null;this.pick=null;this.guides=[];this.mode=null;this.resetGesture(false);this.draw();}
  async page(n){if(!this.pdf)return;const request=this.pageRequest=(this.pageRequest||0)+1;this.revision++;this.task?.cancel();clearTimeout(this.timer);const p=await this.pdf.getPage(n);if(request!==this.pageRequest)return;this.task?.cancel();this.resetGesture(false);this.pdfPage=p;this.pageNumber=n;this.zoom=1;this.minZoom=1;this.panX=this.panY=0;this.detail=null;this.draw();}
  rect(){if(!this.pdfPage)return null;const v=this.pdfPage.getViewport({scale:1}),w=this.container.clientWidth,h=this.container.clientHeight;const scale=Math.max(.0001,Math.min((w-24)/v.width,(h-24)/v.height))*this.zoom;return {x:(w-v.width*scale)/2+this.panX,y:(h-v.height*scale)/2+this.panY,w:v.width*scale,h:v.height*scale,scale};}
  viewCenter(visibleWidth=this.container.clientWidth){
@@ -175,6 +204,7 @@ export class Viewer{
  const marks=this.marks.filter(a=>a.page===this.pageNumber&&!a.deleted);
  for(const a of marks){
   if(a.id===this.areaDraft?.id)continue;
+  this.drawRegions(ov,r,a.regions,a.color);
   for(const stroke of annotationStrokes(a)){
    const {width,pixels}=highlightGeometry(a,r,stroke);
    this.strokeLine(ov,pixels,a.color,width,a.opacity);
@@ -186,9 +216,13 @@ export class Viewer{
   marker(ov,x,y,a.color,a.shape,a.number);
  }
  if(this.areaDraft){
-  const {strokes,color,width,opacity}=this.areaDraft;
-  for(const stroke of this.stroke?[...strokes,this.stroke]:strokes){
-   this.strokeLine(ov,stroke.map(([x,y])=>[r.x+x*r.w,r.y+y*r.h]),color,width*r.scale,opacity);
+  const {regions,vertices,color}=this.areaDraft;
+  this.drawRegions(ov,r,regions,color);
+  const preview=this.stroke||vertices;
+  if(preview?.length>=3)this.drawRegions(ov,r,[preview],color,false);
+  else if(preview?.length===2)this.strokeLine(ov,pixelsOnPage(preview,r),color,2,100);
+  if(vertices?.length)for(const [x,y] of pixelsOnPage(vertices,r)){
+   ov.beginPath();ov.arc(x,y,3,0,Math.PI*2);ov.fillStyle=color;ov.fill();
   }
  }
 
@@ -204,26 +238,24 @@ export class Viewer{
   ov.lineWidth=4;ov.strokeStyle='white';ov.strokeText(label,tx,ty);ov.fillText(label,tx,ty);
  }
  ov.restore();
- if(this.showTouchAreas){
-  ov.save();
-  ov.globalAlpha=.24;
-  ov.fillStyle=ov.strokeStyle='#009ec4';
-  ov.lineCap='round';
-  for(const a of marks){
-   if(a.id===this.areaDraft?.id)continue;
-   for(const {ax,ay,bx,by,radius} of markerTouchParts(a,r)){
-    ov.beginPath();
-    if(ax===bx&&ay===by){ov.arc(ax,ay,radius,0,Math.PI*2);ov.fill();}
-    else{ov.moveTo(ax,ay);ov.lineTo(bx,by);ov.lineWidth=radius*2;ov.stroke();}
-   }
-   for(const stroke of annotationStrokes(a)){
-    const {width,pixels}=highlightGeometry(a,r,stroke);
-    this.strokeLine(ov,pixels,'#009ec4',width+2*touchMargin,24);
-   }
-  }
-  ov.restore();
+ if(this.showTouchAreas&&this.touchPoint){
+  const {x,y}=this.touchPoint;
+  ov.save();ov.beginPath();ov.arc(x,y,clickRadius,0,Math.PI*2);
+  ov.fillStyle='#009ec433';ov.strokeStyle='#007caa';ov.lineWidth=2;ov.fill();ov.stroke();ov.restore();
  }
  if(render){this.revision++;clearTimeout(this.timer);this.timer=setTimeout(()=>this.renderDetail(),100);}}
+ drawRegions(ctx,rect,regions,color,merge=true){
+  const polygons=merge?unionRegions(regions):regions.map(ring=>[ring]);
+  if(!polygons.length)return;
+  ctx.save();ctx.beginPath();
+  for(const polygon of polygons)for(const ring of polygon){
+   const pixels=pixelsOnPage(ring,rect);
+   ctx.moveTo(...pixels[0]);for(const point of pixels.slice(1))ctx.lineTo(...point);
+   ctx.closePath();
+  }
+  ctx.fillStyle=ctx.strokeStyle=color;ctx.globalAlpha=.22;ctx.fill('evenodd');
+  ctx.globalAlpha=1;ctx.lineWidth=2;ctx.setLineDash([7,5]);ctx.stroke();ctx.restore();
+ }
  strokeLine(ctx,points,color,width,opacity){
   if(!points.length)return;
   ctx.save();
@@ -280,7 +312,7 @@ export class Viewer{
   this.start=this.last=point;
   this.moved=this.multi=false;
   this.pinch=null;
-  this.stroke=this.mode==='area'&&this.onSheet(point)?[normalized(point.x,point.y,this.rect())]:null;
+  this.stroke=this.mode==='area'&&this.areaDraft?.tool!=='polygon'&&this.onSheet(point)?[normalized(point.x,point.y,this.rect())]:null;
  }
 
  onSheet({x,y}){
@@ -310,9 +342,11 @@ export class Viewer{
   }
   this.moved||=Math.hypot(point.x-this.start.x,point.y-this.start.y)>(this.areaDraft||e.pointerType!=='touch'?3:12);
   if(this.stroke){
-   if(this.stroke.length<20000)this.stroke.push(normalized(point.x,point.y,this.rect()));
+   const end=normalized(point.x,point.y,this.rect());
+   if(this.areaDraft.tool==='rectangle')this.stroke=rectangularRegion(this.stroke[0],end);
+   else if(this.stroke.length<2000)this.stroke.push(end);
    this.draw(false);
-  }else if((!this.mode||this.multi)&&this.moved){
+  }else if((!this.mode||this.multi||this.areaDraft?.tool==='polygon')&&this.moved){
    this.panX+=point.x-this.last.x;
    this.panY+=point.y-this.last.y;
    this.draw();
@@ -334,16 +368,24 @@ export class Viewer{
 
  up(e){
   if(!this.releasePointer(e.pointerId)||this.pointers.size)return;
-  const stroke=this.stroke;
+  let stroke=this.stroke;
   this.stroke=null;
+  if(stroke&&this.moved&&!this.multi){
+   const point=this.local(e),end=normalized(point.x,point.y,this.rect());
+   if(this.areaDraft.tool==='rectangle')stroke=rectangularRegion(stroke[0],end);
+   else if(stroke.length<2000)stroke.push(end);
+  }
   if(this.multi||this.moved){
-   if(!this.multi&&stroke)this.callbacks.stroke?.(stroke);
+   if(!this.multi&&stroke&&this.moved)this.callbacks.stroke?.(stroke);
    this.draw(false);
    return;
   }
-  if(this.areaDraft){this.draw(false);return;}
   const point=this.local(e);
   const inside=this.onSheet(point);
+  if(this.areaDraft){
+   if(this.mode==='area'&&this.areaDraft.tool==='polygon'&&inside)this.callbacks.vertex?.(normalized(point.x,point.y,this.rect()));
+   return;
+  }
   if(this.pick||this.laser){
    if(inside){
     const position=normalized(point.x,point.y,this.rect());
@@ -351,6 +393,10 @@ export class Viewer{
     else this.callbacks.laser?.(position);
    }
    return;
+  }
+  if(this.showTouchAreas){
+   this.touchPoint=point;clearTimeout(this.touchTimer);this.draw(false);
+   this.touchTimer=setTimeout(()=>{this.touchPoint=null;this.draw(false);},1300);
   }
   const hits=this.hit(point.x,point.y);
   if(hits.length){this.callbacks.edit(hits);return;}
@@ -363,7 +409,7 @@ export class Viewer{
   const rect=this.rect();
   if(!rect)return [];
   const candidates=this.marks.filter(a=>a.page===this.pageNumber&&!a.deleted)
-   .map(annotation=>({annotation,parts:annotationTouchParts(annotation,rect)}));
+   .map(annotation=>({annotation,distance:(px,py)=>markDistance(annotation,rect,px,py)}));
   return touchSelection(candidates,x,y).map(item=>item.annotation);
  }
 }

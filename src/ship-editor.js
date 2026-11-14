@@ -17,6 +17,7 @@ export function editShipPlan({doc,pdf,viewer,controls,sheetLabel,hint,saveButton
   if(current===plan.overview.page)for(const deck of plan.decks){
    if(Number.isFinite(deck.base))result.push({value:deck.base,axis:1,label:deckLabel(deck),color:deck===selected?'#a43421':'#7935a0'});
   }
+  if(current===plan.overview.page&&Number.isFinite(plan.overview.top))result.push({value:plan.overview.top,axis:1,label:tr('Limite superiore del ponte più alto'),color:'#007b83'});
   viewer.guides=result;
   viewer.draw(false);
  }
@@ -91,7 +92,7 @@ export function editShipPlan({doc,pdf,viewer,controls,sheetLabel,hint,saveButton
   pageSelect.onchange=()=>{
    selected.page=Number(pageSelect.value);
    delete selected.x0;delete selected.x1;
-   if(isOverview)for(const deck of plan.decks)delete deck.base;
+   if(isOverview){delete plan.overview.top;for(const deck of plan.decks)delete deck.base;}
    select(selected).catch(report);
   };
   pageField.append(pageSelect);
@@ -113,6 +114,7 @@ export function editShipPlan({doc,pdf,viewer,controls,sheetLabel,hint,saveButton
   const meters=field(controls,tr('Distanza tra ordinate (m)'),{value:selected.meters,type:'number',min:0,step:'any'});
   meters.oninput=()=>{selected.meters=meters.valueAsNumber;};
   const refs=[['Prima ordinata','x0',0],['Seconda ordinata','x1',0]];
+  if(isOverview)refs.push(['Limite superiore del ponte più alto','top',1]);
   if(!isOverview)refs.push(['Base del ponte sulla laterale','base',1]);
   const references=text('div','','setup-reference');
   for(const [label,key,axis] of refs){
@@ -149,6 +151,7 @@ export function editShipPlan({doc,pdf,viewer,controls,sheetLabel,hint,saveButton
     }
    }
    if(plan.decks.some(deck=>!deck.name.trim()||!Number.isFinite(deck.base)))throw Error(tr('Indica il nome e la linea di base per tutti i ponti.'));
+   if(!Number.isFinite(plan.overview.top)||plan.overview.top>=Math.min(...plan.decks.map(deck=>deck.base)))throw Error(tr('Imposta il limite superiore sopra la base del ponte più alto.'));
    saveButton.disabled=true;
    await save(plan);
   }catch(error){report(error);}finally{saveButton.disabled=false;}
