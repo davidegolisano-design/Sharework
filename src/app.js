@@ -16,6 +16,7 @@ let user,profile,projects=[],project,projectLevel,activeDocument,annotations=[],
 let all=localStorage.getItem('sw.all')==='true',panelWidth=Number(localStorage.getItem('sw.panelWidth'))||290,panelHidden=false,undo=[],redo=[],loading=false;
 const roles = {super_admin:'Super admin', admin:'Admin', member:'Utente', viewer:'Visualizzatore'};
 const canManage = () => profile?.approved && ['super_admin','admin'].includes(profile.role);
+const canExportWorks = () => Boolean(profile?.approved && ['member','admin','super_admin'].includes(profile.role));
 const canWrite = () => profile?.approved && projectLevel==='edit';
 const canConfigure = () => profile?.approved && profile.role==='super_admin';
 const plan = () => activeDocument?.ship_plan;
@@ -31,7 +32,6 @@ let laser = null;
 const viewer=new Viewer($('viewport'),$('pdf-canvas'),$('marks-canvas'),{create:a=>makeAnnotation(a).catch(report),edit:(items,event)=>openMarkers(items,event).catch(report),error:report,laser:setLaserPoint,stroke:addAreaStroke,vertex:addAreaVertex});
 const setupViewer=new Viewer($('setup-viewport'),$('setup-pdf'),$('setup-marks'),{error:report});
 let setupPdf,closeSetup,setupLoading=false;
-$('setup-fit').onclick=()=>setupViewer.fit();
 $('setup-back').onclick=()=>{if(!$('setup-save').disabled||setupLoading)showProjectSettings(project).catch(report);};
 
 async function clearShipSetup(){
@@ -334,13 +334,16 @@ async function manageProjectAccess(){
  if(!canManage()||!project)return;
  const projectId=project.id;
  const box=modal(tr('Accessi al progetto'));
+ const container=text('div','');
+ box.append(container);
  const [people,access]=await Promise.all([
   api.table('sw_profiles','approved=eq.true&role=in.(member,viewer)&select=id,full_name&order=full_name'),
   api.table('sw_project_access','project_id=eq.'+projectId)
  ]);
- if(!dialogOpen||!box.isConnected)return;
+ if(!dialogOpen||!container.isConnected)return;
  const levels=new Map(access.map(row=>[row.user_id,row.access_level]));
- if(!people.length)box.append(text('p',tr('Nessun utente approvato da assegnare.')));
+ if(!people.length){container.append(text('p',tr('Nessun utente approvato da assegnare.')));return;}
+ const search=peopleSearch(container);
  for(const person of people){
   const row=text('label',person.full_name,'access-row');
   const select=document.createElement('select');
@@ -361,8 +364,9 @@ async function manageProjectAccess(){
    }catch(error){select.value=previous;report(error);}
    finally{select.disabled=false;}
   };
-  row.append(select);box.append(row);
+  row.append(select);search.append(person.full_name,row);
  }
+ search.update();
 }
 
 function uploadShipPlan(previous){
@@ -463,6 +467,7 @@ async function page(n,{keepPosition=false}={}){
  }finally{loading=false;}
 }
 function applyRole(){
+ $('export-works').hidden=!canExportWorks();
  $('users-button').hidden=profile?.role!=='super_admin';
  $('new-project').hidden=$('edit-project').hidden=$('project-access').hidden=!canManage();
 }
@@ -483,6 +488,7 @@ function updatePages(){
  for(const el of document.querySelectorAll('#toolbar .tool-group,#undo,#redo'))el.hidden=!writable;
  $('undo').disabled=!writable||busy||!undo.length;
  $('redo').disabled=!writable||busy||!redo.length;
+ $('mobile-tools').hidden=!writable&&!canExportWorks();
  for(const id of ['note-tool','note-settings']) $(id).disabled=!canPlace()||busy;
  if(!canPlace()||finishPick) mode(null);
  $('ship-pages').hidden=!plan();
@@ -527,12 +533,7 @@ async function pickNotePoint(target,label,onPick){
  updatePages();
 }
 $('pick-cancel').onclick=()=>finishPick?.(null);
-$('fit').onclick=()=>{
- if(!isOverview()){viewer.fit();return;}
- const visibleWidth=visiblePlanWidth();
- const view=viewer.viewCenter(visibleWidth);
- viewer.centerView(clamp(view?.x??.5,0,1),.5,{visibleWidth,fitHeight:true});
-};$('note-tool').onclick=()=>mode('note');
+$('note-tool').onclick=()=>mode('note');
 function panelMaxWidth(){
  const available=$('workspace-body').clientWidth;
  return Math.max(160,phoneLayout.matches?Math.floor(available*.86):available-180);
@@ -543,21 +544,15 @@ $('panel-toggle').onclick=$('mobile-notes').onclick=$('notes-close').onclick=tog
 phoneLayout.addEventListener('change',()=>{panelHidden=phoneLayout.matches;$('mobile-tools').open=!phoneLayout.matches;applyPanel();});
 $('mobile-tools').open=!phoneLayout.matches;
 $('workspace-body').addEventListener('pointerdown',e=>{if(e.target.closest('#viewport'))$('mobile-tools').open=!phoneLayout.matches;});
-$('touch-areas').onclick=()=>{
- viewer.showTouchAreas=!viewer.showTouchAreas;
- $('touch-areas').setAttribute('aria-pressed',String(viewer.showTouchAreas));
- if(!viewer.showTouchAreas)viewer.touchPoint=null;
- viewer.draw(false);
-};
 $('export-works').onclick=async()=>{
- if(!activeDocument||!project)return;
+ if(!activeDocument||!project||!canExportWorks())return;
  const button=$('export-works');
  const works=annotations, configuration=plan(), title=project.title;
  const name=page=>configuration?.decks.find(deck=>deck.page===page)?.name||tr('Pagina')+' '+page;
  button.disabled=true;
  try{
   const {exportWorks}=await import('./work-export.js');
-  await exportWorks(works,configuration,title,name,tr,locale());
+  if(canExportWorks()&&!$('workspace').hidden)await exportWorks(works,configuration,title,name,tr,locale());
  }catch(error){report(error);}
  finally{button.disabled=false;}
 };
@@ -1059,12 +1054,44 @@ async function toolSettings(existing=null){
 $('note-settings').onclick=()=>toolSettings().catch(report);
 async function travel(isRedo){if(!canWrite()||finishPick||areaSession)return;const from=isRedo?redo:undo,to=isRedo?undo:redo,item=from.at(-1);if(!item||loading)return;const current=annotations.find(a=>a.id===item.id);if(!current||current.version!==item.expected)throw Error(tr('Annotazione aggiornata da un altro utente: impossibile annullare senza sovrascriverla.'));const result=await patch(current,isRedo?item.after:item.before);from.pop();to.push({...item,expected:result.version});const previous=from.findLast(entry=>entry.id===item.id);if(previous&&JSON.stringify(snapshot(result))===JSON.stringify(isRedo?previous.before:previous.after))previous.expected=result.version;updatePages();}
 $('undo').onclick=()=>travel(false).catch(report);$('redo').onclick=()=>travel(true).catch(report);
+function peopleSearch(box){
+ const search=document.createElement('input');
+ search.type='search';
+ search.className='people-search';
+ search.placeholder=tr('Cerca utenti per nome…');
+ search.setAttribute('aria-label',search.placeholder);
+ const list=text('div','','people-list');
+ const empty=text('p',tr('Nessun utente trovato.'),'people-empty');
+ const normalize=value=>value.normalize('NFD').replace(/\p{M}/gu,'').toLocaleLowerCase(locale());
+ const entries=[];
+ function update(){
+  const query=normalize(search.value).trim();
+  let matches=0;
+  for(const {name,row} of entries){
+   row.hidden=!name.includes(query);
+   if(!row.hidden)matches++;
+  }
+  empty.hidden=matches>0;
+ }
+ search.addEventListener('input',update);
+ box.append(search,list,empty);
+ return {
+  append(name,row){entries.push({name:normalize(name),row});list.append(row);},
+  update,
+  get query(){return search.value;},
+  set query(value){search.value=value;update();}
+ };
+}
+
 $('users-button').onclick=()=>manageUsers().catch(report);
-async function manageUsers(){
+async function manageUsers(query=''){
  if(profile?.role!=='super_admin')return;
  const box=modal(tr('Utenti'));
+ const container=text('div','');
+ box.append(container);
  const rows=await api.table('sw_profiles','select=*&order=created_at.desc');
- if(!box.isConnected||!dialogOpen)return;
+ if(!container.isConnected||!dialogOpen)return;
+ const search=peopleSearch(container);
  for(const p of rows){
   const row=text('div','','user-row'),name=text('span',p.full_name);
   name.append(text('small',tr(roles[p.role])+' · '+(tr(p.approved?'Abilitato':'In attesa'))));
@@ -1078,17 +1105,18 @@ async function manageUsers(){
     const newRole=role.value;
     if(!confirm(tr('Assegnare il ruolo')+' '+tr(roles[newRole])+' '+tr('a')+' '+p.full_name+'?')){role.value=p.role;return;}
     role.disabled=true;
-    try{await api.rpc('sw_set_role',{target:p.id,new_role:newRole});await closeModal();await manageUsers();}
+    try{await api.rpc('sw_set_role',{target:p.id,new_role:newRole});await closeModal();await manageUsers(search.query);}
     catch(e){role.value=p.role;report(e);}finally{role.disabled=false;}
    };
    row.append(role,btn(tr(p.approved?'Disabilita':'Approva'),async()=>{
     await api.rpc('sw_set_approval',{target:p.id,allow_access:!p.approved});
     await closeModal();
-    await manageUsers();
+    await manageUsers(search.query);
    },p.approved?'':'primary'));
   }
-  box.append(row);
+  search.append(p.full_name,row);
  }
+ search.query=query;
 }
 function dismissNoteSession(){
  cancelPick();

@@ -1,6 +1,7 @@
 const english = {
  "Espandi barra strumenti":"Expand toolbar",
- "Mostra cerchio di tocco":"Show tap circle",
+ "Cerca utenti per nome…":"Search users by name…",
+ "Nessun utente trovato.":"No users found.",
  "Esporta Excel":"Export Excel",
  "Forma dell’area":"Area shape",
  "Rettangolo":"Rectangle",
@@ -114,7 +115,6 @@ const english = {
  "Impostazioni evidenziatore": "Highlight settings",
  "Annulla": "Undo",
  "Ripeti": "Redo",
- "Adatta": "Fit",
  "Pagina precedente; tieni premuto per scegliere": "Previous page. Press and hold to choose a page",
  "Scegli pagina": "Choose page",
  "Pagina successiva; tieni premuto per scegliere": "Next page. Press and hold to choose a page",
