@@ -3,7 +3,7 @@ import {projectCover} from './cards.js';
 import {watchChanges} from './realtime.js';
 import * as api from './api.js';
 import {Viewer,loadPdf,marker} from './viewer.js';
-import {snapshot,grouped,clamp,annotationStrokes} from './model.js';
+import {snapshot,grouped,clamp,annotationStrokes,normalizeSearch,searchRanges} from './model.js';
 import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js';
 import {finishRegion,legacyRegions} from './work-regions.js';
 import {editShipPlan} from './ship-editor.js';
@@ -27,7 +27,6 @@ const phoneLayout=matchMedia('(max-width:960px), (orientation:landscape) and (ma
 const filterIds = ['notes-query','notes-page','notes-kind','notes-author','notes-day'];
 let finishPick = null;
 let areaSession = null;
-let lastDeckView = null;
 let laser = null;
 const viewer=new Viewer($('viewport'),$('pdf-canvas'),$('marks-canvas'),{create:a=>makeAnnotation(a).catch(report),edit:(items,event)=>openMarkers(items,event).catch(report),error:report,laser:setLaserPoint,stroke:addAreaStroke,vertex:addAreaVertex});
 const setupViewer=new Viewer($('setup-viewport'),$('setup-pdf'),$('setup-marks'),{error:report});
@@ -73,6 +72,17 @@ async function startShipSetup(doc,previousPlan){
 }
 try{Object.assign(viewer.settings,JSON.parse(localStorage.getItem('sw.tools')||'{}'));}catch{}
 const text=(tag,value,cls)=>{const el=document.createElement(tag);el.textContent=value;if(cls)el.className=cls;return el;};
+function highlightMatch(element,value,query){
+ const ranges=searchRanges(value,query);
+ const parts=[];
+ let start=0;
+ for(const [from,to] of ranges){
+  parts.push(value.slice(start,from),text('mark',value.slice(from,to),'search-match'));
+  start=to;
+ }
+ element.replaceChildren(...parts,value.slice(start));
+ return element;
+}
 function btn(label,action,cls){const b=text('button',label,cls);b.type='button';b.onclick=()=>Promise.resolve().then(action).catch(report);return b;}
 function report(e){toast(tr(e?.message||String(e)));}
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').hidden=true,6500);}
@@ -345,7 +355,7 @@ async function manageProjectAccess(){
  if(!people.length){container.append(text('p',tr('Nessun utente approvato da assegnare.')));return;}
  const search=peopleSearch(container);
  for(const person of people){
-  const row=text('label',person.full_name,'access-row');
+  const row=text('label','','access-row'),name=text('span',person.full_name);
   const select=document.createElement('select');
   select.append(...[['','Nessun accesso'],['view','Sola lettura'],['edit','Modifica note']].map(([key,label])=>new Option(tr(label),key)));
   select.value=levels.get(person.id)||'';
@@ -364,7 +374,7 @@ async function manageProjectAccess(){
    }catch(error){select.value=previous;report(error);}
    finally{select.disabled=false;}
   };
-  row.append(select);search.append(person.full_name,row);
+  row.append(name,select);search.append(person.full_name,row,name);
  }
  search.update();
 }
@@ -402,7 +412,7 @@ function uploadShipPlan(previous){
  $('dialog-footer').append(submit);
 }
 
-async function openDocument(p){lastDeckView=null;laser=null;const token=++epoch;loading=true;activeDocument=p;annotations=[];undo=[];redo=[];viewer.clear();screen('workspace');$('document-title').textContent=p.title;status(tr('Apertura…'));applyPanel();try{const [blob,rows]=await Promise.all([api.pdfDownload(p.file_path),api.table('sw_annotations','document_id=eq.'+p.id+'&select=*&order=created_at.asc')]);if(token!==epoch)return;await pdf?.destroy();pdf=await loadPdf(new Uint8Array(await blob.arrayBuffer()));if(token!==epoch){await pdf.destroy();return;}annotations=rows;await viewer.open(pdf,plan()?.overview.page||1);
+async function openDocument(p){laser=null;const token=++epoch;loading=true;activeDocument=p;annotations=[];undo=[];redo=[];viewer.clear();screen('workspace');$('document-title').textContent=p.title;status(tr('Apertura…'));applyPanel();try{const [blob,rows]=await Promise.all([api.pdfDownload(p.file_path),api.table('sw_annotations','document_id=eq.'+p.id+'&select=*&order=created_at.asc')]);if(token!==epoch)return;await pdf?.destroy();pdf=await loadPdf(new Uint8Array(await blob.arrayBuffer()));if(token!==epoch){await pdf.destroy();return;}annotations=rows;await viewer.open(pdf,plan()?.overview.page||1);
 for(const id of filterIds) $(id).value='';
 if(phoneLayout.matches){panelHidden=true;applyPanel();}
 if(isOverview())viewer.centerView(.5,.5,{visibleWidth:visiblePlanWidth(),fitHeight:true});
@@ -449,19 +459,15 @@ async function page(n,{keepPosition=false}={}){
   const target=sheets.find(sheet=>sheet.page===n);
   const view=keepPosition&&source&&target?viewer.viewCenter(visiblePlanWidth()):null;
   const mapped=view?mapDeckView(source,target,view):null;
-  if(mapped&&source!==overview)lastDeckView={y:view.y,pixelsPerMeter:mapped.pixelsPerMeter};
   mode(null);
   await viewer.page(n);
   if(viewer.pageNumber!==n)return;
   const visibleWidth=visiblePlanWidth();
-  const beam=keepPosition&&laser&&target?laserOnPage(ship,n,laser):null;
-  const beamVisible=beam?.x>=0&&beam?.x<=1;
-  if(target&&target===overview){
-   viewer.centerView(beamVisible?beam.x:mapped?clamp(mapped.x,0,1):.5,.5,{visibleWidth,fitHeight:true});
-  }else if(mapped){
-   const deckView=lastDeckView;
-   const width=deckView?deckView.pixelsPerMeter/Math.abs(longitudinalScale(target)):undefined;
-   viewer.centerView(beamVisible?beam.x:clamp(mapped.x,0,1),beamVisible?beam.y:clamp(deckView?.y??.5,0,1),{visibleWidth,width});
+  if(mapped){
+   const width=mapped.pixelsPerMeter/Math.abs(longitudinalScale(target));
+   viewer.centerView(mapped.x,view.y,{visibleWidth,width});
+  }else if(target&&target===overview){
+   viewer.centerView(.5,.5,{visibleWidth,fitHeight:true});
   }
   refreshList();
  }finally{loading=false;}
@@ -621,10 +627,11 @@ function refreshList(){
  const overview=isOverview();
  const order=shipPageOrder(plan(),pdf.numPages);
  selectOptions($('notes-page'),[['',tr('Tutte')],...order.map(n=>[n,pageName(n)])]);
- selectOptions($('notes-kind'),[['',tr('Tutti')],...noteShapes.map(([key,label])=>[key,emojiSymbols[key]||({circle:'●',square:'■',diamond:'◆',triangle:'▲'})[key]+' '+tr(label)]),['highlight',tr('Evidenziazione')]]);
+ selectOptions($('notes-kind'),[['',tr('Tutti')],...noteShapes.map(([key,label])=>[key,(emojiSymbols[key]||({circle:'●',square:'■',diamond:'◆',triangle:'▲'})[key])+' '+tr(label)]),['highlight',tr('Evidenziazione')]]);
  const authors=new Map(annotations.filter(a=>!a.deleted).map(a=>[a.created_by,a.author_name]));
  selectOptions($('notes-author'),[['',tr('Tutti')],...[...authors].sort((a,b)=>a[1].localeCompare(b[1],locale()))]);
  const [query,pageFilter,kind,author,day]=filterIds.map(id=>$(id).value);
+ const search=normalizeSearch(query).trim();
  const filtered=filterNotes(annotations,{query,page:pageFilter,kind,author,day});
  const projected=overview?projectMarks(plan(),filtered):[];
  const references=!overview&&plan()?deckReferences(plan(),filtered,viewer.pageNumber):[];
@@ -648,9 +655,23 @@ function refreshList(){
    previous=a.page;
   }
   const row=text('div','','annotation'),open=btn('',()=>openListedNote(a),'annotation-open');
-  open.append(text('span',a.title||(a.kind==='note'?tr('Nota')+' '+a.number:tr('Evidenziazione')),'annotation-title'));
-  if(a.description)open.append(text('span',a.description,'annotation-description'));
-  open.append(text('span',a.author_name+' · '+date(a.created_at),'annotation-author'));
+  const title=a.title||(a.kind==='note'?tr('Nota')+' '+a.number:tr('Evidenziazione'));
+  open.append(highlightMatch(text('span','','annotation-title'),title,search));
+  if(a.title&&a.number!=null&&search&&String(a.number).includes(search)){
+   const number=text('span','','annotation-number');
+   number.append('#',highlightMatch(text('span',''),String(a.number),search));
+   open.append(number);
+  }
+  if(a.description){
+   const description=text('span','','annotation-description');
+   const [match]=searchRanges(a.description,search);
+   const offset=Math.max(0,(match?.[0]??0)-25);
+   const preview=(offset?'…':'')+a.description.slice(offset);
+   open.append(highlightMatch(description,preview,search));
+  }
+  const authorLine=highlightMatch(text('span','','annotation-author'),a.author_name,search);
+  authorLine.append(' · '+date(a.created_at));
+  open.append(authorLine);
   const origin=a.deckReference?(referenceOrigins.get(a.id)||a):a;
   const sheet=plan()?.decks.find(deck=>deck.page===origin.page);
   const frame=frameAt(sheet,origin.x);
@@ -1018,7 +1039,7 @@ async function toolSettings(existing=null){
   icon.width=icon.height=68;
   const ctx=icon.getContext('2d');ctx.scale(2,2);
   marker(ctx,17,17,'#2f529e',shape,null,11);
-  button.append(icon);
+  button.append(icon,text('span',tr(label)));
   options.append(button);
  }
  box.append(options);
@@ -1062,21 +1083,20 @@ function peopleSearch(box){
  search.setAttribute('aria-label',search.placeholder);
  const list=text('div','','people-list');
  const empty=text('p',tr('Nessun utente trovato.'),'people-empty');
- const normalize=value=>value.normalize('NFD').replace(/\p{M}/gu,'').toLocaleLowerCase(locale());
  const entries=[];
  function update(){
-  const query=normalize(search.value).trim();
+  const query=normalizeSearch(search.value).trim();
   let matches=0;
-  for(const {name,row} of entries){
-   row.hidden=!name.includes(query);
-   if(!row.hidden)matches++;
+  for(const {name,key,row,label} of entries){
+   row.hidden=!key.includes(query);
+   if(!row.hidden){highlightMatch(label,name,query);matches++;}
   }
   empty.hidden=matches>0;
  }
  search.addEventListener('input',update);
  box.append(search,list,empty);
  return {
-  append(name,row){entries.push({name:normalize(name),row});list.append(row);},
+  append(name,row,label){entries.push({name,key:normalizeSearch(name),row,label});list.append(row);},
   update,
   get query(){return search.value;},
   set query(value){search.value=value;update();}
@@ -1093,9 +1113,9 @@ async function manageUsers(query=''){
  if(!container.isConnected||!dialogOpen)return;
  const search=peopleSearch(container);
  for(const p of rows){
-  const row=text('div','','user-row'),name=text('span',p.full_name);
-  name.append(text('small',tr(roles[p.role])+' · '+(tr(p.approved?'Abilitato':'In attesa'))));
-  row.append(name);
+  const row=text('div','','user-row'),summary=text('span',''),name=text('strong',p.full_name);
+  summary.append(name,text('small',tr(roles[p.role])+' · '+(tr(p.approved?'Abilitato':'In attesa'))));
+  row.append(summary);
   if(p.id!==user.id){
    const role=document.createElement('select');
    role.setAttribute('aria-label',tr('Ruolo di')+' '+p.full_name);
@@ -1114,7 +1134,7 @@ async function manageUsers(query=''){
     await manageUsers(search.query);
    },p.approved?'':'primary'));
   }
-  search.append(p.full_name,row);
+  search.append(p.full_name,row,name);
  }
  search.query=query;
 }

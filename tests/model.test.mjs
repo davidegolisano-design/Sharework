@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {grouped,normalized,segmentDistance,snapshot,touchSelection} from '../src/model.js';
+import test from 'node:test';import assert from 'node:assert/strict';import {grouped,normalized,segmentDistance,snapshot,touchSelection,normalizeSearch,searchRanges} from '../src/model.js';
 test('Grouping, normalized coordinates and hit detection',()=>{
  const a=[{id:1,page:3,created_at:'a'},{id:2,page:1,created_at:'b'},{id:3,page:1,created_at:'a'},{id:4,page:1,created_at:'c',deleted:true}];
  assert.deepEqual(grouped(a,1,false).map(x=>x.id),[3,2]);assert.deepEqual(grouped(a,1,true).map(x=>x.id),[3,2,1]);
@@ -100,4 +100,13 @@ test('Areas span the requested decks and keep one icon centered on the origin de
  assert.deepEqual(reference.regions,[]);
  assert.deepEqual(workFrameRange(plan.decks[1],note),[18.5,55.5]);
  assert.equal(frameAt({...calibration,x0:.6,x1:.2},.4),37);
+});
+
+test('Note search highlights the original spelling and combining accents',()=>{
+ const title='José e JOSE\u0301';
+ const query=normalizeSearch('jose');
+ assert.deepEqual(searchRanges(title,query).map(([a,b])=>title.slice(a,b)),['José','JOSE\u0301']);
+ assert.deepEqual(searchRanges(title,''),[]);
+ const note={title,shape:'welding'};
+ assert.deepEqual(filterNotes([note],{query:'jose',kind:'welding'}),[note]);
 });

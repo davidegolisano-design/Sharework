@@ -187,3 +187,28 @@ test('Dialog guards block the plan tap and require a fresh button press while al
  assert.equal(click(1),false);
  assert.equal(click(0,-1,''),false);
 });
+
+test('Switching decks with the laser off center preserves view instead of following it',async()=>{
+ const app=await readFile('src/app.js','utf8');
+ const source=app.slice(app.indexOf('async function page('),app.indexOf('function applyRole('));
+ const origin={page:2,x0:.2,x1:.6,frame0:0,frame1:74,meters:51.06};
+ const target={...origin,page:3,x0:.8,x1:.6};
+ const overview={...origin,page:1};
+ const centers=[];
+ const viewer={pageNumber:2,
+  viewCenter:()=>({x:.4,y:.65,width:1000}),
+  async page(n){this.pageNumber=n;},
+  centerView:(x,y,options)=>centers.push([x,y,options.width])
+ };
+ const {mapDeckView,longitudinalScale,laserOnPage}=await import('../src/ship-model.js');
+ const context={viewer,plan:()=>({overview,decks:[origin,target]}),visiblePlanWidth:()=>830,
+  mapDeckView,longitudinalScale,laserOnPage,clamp:model.clamp,
+  laser:{x:.28,y:.25},areaSession:null,finishPick:null,loading:false,pdf:{numPages:3},mode(){},refreshList(){}};
+ const page=vm.runInNewContext(source+'\npage',context);
+ await page(3,{keepPosition:true});
+ assert.ok(Math.abs(centers[0][0]-.7)<1e-12);
+ assert.equal(centers[0][1],.65);
+ assert.ok(Math.abs(centers[0][2]-2000)<1e-9);
+ assert.equal(context.laser.x,.28);
+ assert.equal(context.laser.y,.25);
+});
