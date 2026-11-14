@@ -1,4 +1,4 @@
-import {annotationStrokes,normalizeSearch} from './model.js?v=34426cf9c301';
+import {annotationStrokes,normalizeSearch} from './model.js?v=a71834d7bc03';
 const workSymbols = [
   ['flame','🔥','Fiamma'], ['warning','⚠️','Attenzione'], ['electric','⚡','Elettrico'], ['tool','🔧','Attrezzatura'],
   ['welding','🧑‍🏭','Saldatura'], ['pipes','🚰','Tubazioni'], ['lifting','🏗️','Sollevamento'],

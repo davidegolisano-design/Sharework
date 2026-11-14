@@ -1,12 +1,12 @@
-import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=34426cf9c301';
-import {projectCover} from './cards.js?v=34426cf9c301';
-import {watchChanges} from './realtime.js?v=34426cf9c301';
-import * as api from './api.js?v=34426cf9c301';
-import {Viewer,loadPdf,marker} from './viewer.js?v=34426cf9c301';
-import {snapshot,grouped,clamp,annotationStrokes,normalizeSearch,searchRanges} from './model.js?v=34426cf9c301';
-import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js?v=34426cf9c301';
-import {finishRegion,legacyRegions} from './work-regions.js?v=34426cf9c301';
-import {editShipPlan} from './ship-editor.js?v=34426cf9c301';
+import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=a71834d7bc03';
+import {projectCover} from './cards.js?v=a71834d7bc03';
+import {watchChanges} from './realtime.js?v=a71834d7bc03';
+import * as api from './api.js?v=a71834d7bc03';
+import {Viewer,loadPdf,marker} from './viewer.js?v=a71834d7bc03';
+import {snapshot,grouped,clamp,annotationStrokes,normalizeSearch,searchRanges} from './model.js?v=a71834d7bc03';
+import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js?v=a71834d7bc03';
+import {finishRegion,legacyRegions} from './work-regions.js?v=a71834d7bc03';
+import {editShipPlan} from './ship-editor.js?v=a71834d7bc03';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
 let stopRealtime=null,refreshTimer,realtimeConnected=false,lastSafetyCheck=0,annotationRevision=0;
 const pendingSync=new Set();
@@ -557,7 +557,7 @@ $('export-works').onclick=async()=>{
  const name=page=>configuration?.decks.find(deck=>deck.page===page)?.name||tr('Pagina')+' '+page;
  button.disabled=true;
  try{
-  const {exportWorks}=await import('./work-export.js?v=34426cf9c301');
+  const {exportWorks}=await import('./work-export.js?v=a71834d7bc03');
   if(canExportWorks()&&!$('workspace').hidden)await exportWorks(works,configuration,title,name,tr,locale());
  }catch(error){report(error);}
  finally{button.disabled=false;}

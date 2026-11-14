@@ -62,6 +62,12 @@ Per installare: aprire il sito in Edge/Chrome e premere **Installa app**. Se il 
 
 Il sito pubblico mostra solo l'accesso. I PDF non si trovano nel repository o nella cartella pubblicata: sono nel bucket privato `sharework-pdfs`. Dopo il login vengono scaricati con il token dell'utente, senza URL pubblici permanenti.
 
+## App Android
+
+L’APK v10 apre Sharework direttamente a schermo intero e segue la rotazione di sistema. Il pacchetto `it.sgdp.sharework` si può installare accanto al v9. Entrambi accedono allo stesso sito con le credenziali Sharework. Il v10 usa l’icona della PWA e il selettore file di Android per PDF ed Excel.
+
+Per ricompilare, impostare `ANDROID_JAR` (API 34), `ANDROID_BUILD_TOOLS`, `SHAREWORK_KEYSTORE` e `SHAREWORK_STORE_PASSWORD`, quindi eseguire `android/build.sh`. Per gli aggiornamenti di questo pacchetto usare lo stesso certificato di firma.
+
 ## Verifiche e limiti
 
 `pnpm test` esegue veri test SQL su PostgreSQL locale tramite PGlite, con ruoli e Row Level Security: accesso negato ai non approvati, impossibilità di auto-approvazione, identità autore non falsificabile, numerazione, controllo versione e file privati. PGlite simula le tabelle Auth/Storage necessarie; non sostituisce il collaudo dei servizi Auth/Storage sul progetto Supabase reale.
