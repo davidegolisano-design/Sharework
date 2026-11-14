@@ -106,3 +106,13 @@ test('Clicking inside a unioned area includes its work and any nearby icon only 
  assert.deepEqual(Array.from(v.hit(250,125),n=>n.id).sort(),[1,2]);
  assert.deepEqual(Array.from(v.hit(450,220),n=>n.id),[1]);
 });
+
+test('An emoji glyph edge hit and a filled area open the same chooser on every input type',()=>{
+ const v=Object.create(Viewer.prototype);
+ const metrics={width:29,actualBoundingBoxLeft:14,actualBoundingBoxRight:14,actualBoundingBoxAscent:17,actualBoundingBoxDescent:12};
+ Object.assign(v,{pageNumber:1,rect:()=>({x:0,y:0,w:1000,h:500,scale:1}),overlay:{getContext:()=>({save(){},restore(){},measureText:()=>metrics})},marks:[
+  {id:1,page:1,kind:'note',shape:'flame',x:.5,y:.5},
+  {id:2,page:1,kind:'note',shape:'circle',x:.8,y:.8,regions:[[[.45,.38],[.56,.38],[.56,.45],[.45,.45]]]}
+ ]});
+ assert.deepEqual(Array.from(v.hit(523,216),n=>n.id).sort(),[1,2]);
+});

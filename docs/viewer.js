@@ -1,13 +1,18 @@
 import * as pdfjs from './vendor/build/pdf.mjs';
-import {normalized,contrast,clamp,annotationStrokes,segmentDistance,pointInRing,clickRadius,touchSelection} from './model.js?v=0f9a44514d9c';
+import {normalized,contrast,clamp,annotationStrokes,segmentDistance,pointInRing,clickRadius,touchSelection} from './model.js?v=76c5c8ec8f00';
 pdfjs.GlobalWorkerOptions.workerSrc=new URL('./vendor/build/pdf.worker.mjs',import.meta.url).href;
 const vendor=new URL('./vendor/',import.meta.url).href;
 export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendor+'cmaps/',cMapPacked:true,standardFontDataUrl:vendor+'standard_fonts/',wasmUrl:vendor+'wasm/',iccUrl:vendor+'iccs/',isEvalSupported:false}).promise;}
-import {emojiSymbols} from './ship-model.js?v=0f9a44514d9c';
+import {emojiSymbols} from './ship-model.js?v=76c5c8ec8f00';
 const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
+const emojiFont=r=>`${r*1.8}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+const badgeFont='700 10px system-ui';
+const badgeWidth=metrics=>Math.max(14,metrics.width+6);
+const rectangleDistance=(x,y,left,top,right,bottom)=>
+ Math.hypot(Math.max(0,left-x,x-right),Math.max(0,top-y,y-bottom));
 import polygonClipping from './vendor/polygon-union.js';
-import {rectangularRegion} from './work-regions.js?v=0f9a44514d9c';
+import {rectangularRegion} from './work-regions.js?v=76c5c8ec8f00';
 const regionCache=new WeakMap();
 function unionRegions(regions){
  if(!regions?.length)return [];
@@ -24,7 +29,7 @@ const projectedOffset=markerRadius+5;
 export function marker(ctx,x,y,color,shape,number,r=markerRadius){
  ctx.save();
  if(emojiSymbols[shape]){
-  ctx.font=`${r*1.8}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+  ctx.font=emojiFont(r);
   ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#202020';
   ctx.fillText(emojiSymbols[shape],x,y);
   if(number!=null)numberBadge(ctx,x+r*.65,y+r*.45+6.5,number);
@@ -51,8 +56,8 @@ export function numberBadge(ctx,x,y,number){
  if(number==null)return;
  ctx.save();
  const label=String(number);
- ctx.font='700 10px system-ui';
- const width=Math.max(14,ctx.measureText(label).width+6);
+ ctx.font=badgeFont;
+ const width=badgeWidth(ctx.measureText(label));
  ctx.beginPath();
  ctx.roundRect(x-width/2,y-6.5,width,13,5);
  ctx.fillStyle='#183a79';
@@ -91,14 +96,22 @@ function pathDistance(x,y,points,closed=false){
  return distance;
 }
 
-function markDistance(annotation,rect,x,y){
+function markDistance(annotation,rect,x,y,ctx){
  const [cx,cy]=markPosition(annotation,rect);
  const radius=markerRadius+2;
  let distance;
  if(!annotation.shape||annotation.shape==='circle'){
   distance=Math.hypot(x-cx,y-cy)-radius;
  }else if(emojiSymbols[annotation.shape]){
-  distance=Math.hypot(x-cx,y-cy)-markerRadius*.95;
+  const glyph=emojiSymbols[annotation.shape];
+  ctx?.save();
+  if(ctx){ctx.font=emojiFont(markerRadius);ctx.textAlign='center';ctx.textBaseline='middle';}
+  const metrics=ctx?.measureText(glyph);
+  ctx?.restore();
+  const half=markerRadius*.9;
+  distance=rectangleDistance(x,y,
+   cx-(metrics?.actualBoundingBoxLeft||half),cy-(metrics?.actualBoundingBoxAscent||half),
+   cx+(metrics?.actualBoundingBoxRight||half),cy+(metrics?.actualBoundingBoxDescent||half));
  }else{
   const r=markerRadius;
   const offsets=annotation.shape==='triangle'?[[0,-r*1.3],[r*1.2,r],[-r*1.2,r]]
@@ -108,9 +121,12 @@ function markDistance(annotation,rect,x,y){
   distance=pointInRing(x,y,ring)?0:pathDistance(x,y,ring,true)-2;
  }
  if(annotation.number!=null){
-  const dx=Math.max(0,Math.abs(x-cx-markerRadius*.65)-Math.max(7,String(annotation.number).length*4+3));
-  const dy=Math.max(0,Math.abs(y-cy-markerRadius*.45-6.5)-7.25);
-  distance=Math.min(distance,Math.hypot(dx,dy));
+  ctx?.save();
+  if(ctx)ctx.font=badgeFont;
+  const width=ctx?badgeWidth(ctx.measureText(String(annotation.number))):Math.max(14,String(annotation.number).length*6+6);
+  ctx?.restore();
+  const bx=cx+markerRadius*.65, by=cy+markerRadius*.45+6.5;
+  distance=Math.min(distance,rectangleDistance(x,y,bx-width/2-.75,by-7.25,bx+width/2+.75,by+7.25));
  }
  for(const stroke of annotationStrokes(annotation)){
   const {width,pixels}=highlightGeometry(annotation,rect,stroke);
@@ -394,11 +410,11 @@ export class Viewer{
    }
    return;
   }
+  const hits=this.hit(point.x,point.y);
   if(this.showTouchAreas){
    this.touchPoint=point;clearTimeout(this.touchTimer);this.draw(false);
    this.touchTimer=setTimeout(()=>{this.touchPoint=null;this.draw(false);},1300);
   }
-  const hits=this.hit(point.x,point.y);
   if(hits.length){this.callbacks.edit(hits);return;}
   if(this.mode==='note'&&inside){
    const [x,y]=normalized(point.x,point.y,this.rect());
@@ -408,8 +424,9 @@ export class Viewer{
  hit(x,y){
   const rect=this.rect();
   if(!rect)return [];
+  const context=this.overlay?.getContext('2d');
   const candidates=this.marks.filter(a=>a.page===this.pageNumber&&!a.deleted)
-   .map(annotation=>({annotation,distance:(px,py)=>markDistance(annotation,rect,px,py)}));
+   .map(annotation=>({annotation,distance:(px,py)=>markDistance(annotation,rect,px,py,context)}));
   return touchSelection(candidates,x,y).map(item=>item.annotation);
  }
 }
