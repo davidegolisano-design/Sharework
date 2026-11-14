@@ -44,15 +44,60 @@ export function laserOnPage(plan, page, laser) {
   return {x,y:laser.y,vertical:false};
 }
 
+export function frameAt(sheet,x){
+ if(!sheet||!Number.isFinite(x)||sheet.x0===sheet.x1)return null;
+ const frame=sheet.frame0+(x-sheet.x0)*(sheet.frame1-sheet.frame0)/(sheet.x1-sheet.x0);
+ return Number.isFinite(frame)?Math.round(frame*100)/100:null;
+}
+
+export function workDecks(plan,annotation){
+ const decks=[...(plan?.decks||[])].sort((a,b)=>a.base-b.base);
+ const index=decks.findIndex(deck=>deck.page===annotation.page);
+ return index<0?[]:decks.slice(Math.max(0,index-(annotation.decks_above||0)),index+1+(annotation.decks_below||0));
+}
+
+export function workFrameRange(sheet,annotation){
+ const points=[...(annotation.regions||[]),...annotationStrokes(annotation)].flat();
+ let start=Infinity,end=-Infinity;
+ for(const [x] of points){
+  const frame=frameAt(sheet,x);
+  if(frame!=null){start=Math.min(start,frame);end=Math.max(end,frame);}
+ }
+ return Number.isFinite(start)?[start,end]:[null,null];
+}
+
+export function deckReferences(plan,annotations,page){
+ const target=plan.decks.find(deck=>deck.page===page);
+ if(!target)return [];
+ return annotations.flatMap(annotation=>{
+  if(annotation.page===page||!workDecks(plan,annotation).includes(target))return [];
+  const origin=plan.decks.find(deck=>deck.page===annotation.page);
+  const {x}=mapDeckView(origin,target,{x:annotation.x,width:1});
+  return x>=0&&x<=1?[{...annotation,page,x,y:.5,kind:'note',points:[],strokes:[],regions:[],deckReference:true}]:[];
+ });
+}
+
 export function projectMarks(plan, annotations) {
   const {overview, decks} = plan;
   const byPage = new Map(decks.map(deck => [deck.page, deck]));
   const projected = [];
+  const ordered=[...decks].sort((a,b)=>a.base-b.base);
+  const deckTop=deck=>ordered[ordered.indexOf(deck)-1]?.base ?? overview.top;
   for (const annotation of annotations) {
     const deck = byPage.get(annotation.page);
     if (!deck) continue;
     const strokes=annotationStrokes(annotation);
     const ranges=[];
+    const regions=[];
+    const involved=workDecks(plan,annotation);
+    const top=deckTop(involved[0]),bottom=involved.at(-1).base;
+    for(const ring of annotation.regions||[]){
+      const xs=ring.map(([x])=>mapDeckView(deck,overview,{x,width:1}).x);
+      const left=Math.max(0,Math.min(...xs)),right=Math.min(1,Math.max(...xs));
+      if(left>=right)continue;
+      const upper=Number.isFinite(top)&&top<bottom?top:Math.max(0,bottom-.012);
+      regions.push([[left,upper],[right,upper],[right,bottom],[left,bottom]]);
+    }
     for (const stroke of strokes) {
       let left = Infinity, right = -Infinity;
       for (const [sourceX] of stroke) {
@@ -69,7 +114,10 @@ export function projectMarks(plan, annotations) {
       if (!ranges.length) continue;
       x=(ranges[0][0][0]+ranges[0][1][0])/2;
     }
-    projected.push({...annotation,page:overview.page,x,y:deck.base,points:[],strokes:ranges,projected:true});
+    const ceiling=deckTop(deck);
+    const centered=regions.length&&Number.isFinite(ceiling)&&ceiling<deck.base;
+    projected.push({...annotation,page:overview.page,x,y:centered?(ceiling+deck.base)/2:deck.base,
+      points:[],strokes:ranges,regions,projected:true,centered});
   }
   return projected;
 }
@@ -79,7 +127,7 @@ export function filterNotes(annotations, {query, page, kind, author, day}) {
   return annotations.filter(a => {
     const localDay = day ? new Date(a.created_at).toLocaleDateString('sv-SE') : '';
     return !a.deleted && (!page || a.page === Number(page)) &&
-      (!kind || kind === (annotationStrokes(a).length ? 'highlight' : a.shape)) &&
+      (!kind || kind === (annotationStrokes(a).length || a.regions?.length ? 'highlight' : a.shape)) &&
       (!author || a.created_by === author) && (!day || day === localDay) &&
       (!search || [a.title,a.description,a.number,a.author_name].some(value => String(value ?? '').toLocaleLowerCase('it').includes(search)));
   });

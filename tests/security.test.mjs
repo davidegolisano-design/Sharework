@@ -149,6 +149,14 @@ test('Database permissions, approval, authorship, numbering and private files',a
  await assert.rejects(db.query('update sw_annotations set strokes=$2 where id=$1',[first.id,'[[[0,0],[2,0]]]']));
  await db.exec('reset role');
  await db.exec(await readFile('supabase/012_delete_accounts_keep_work.sql','utf8'));
+ await db.exec(await readFile('supabase/013_work_areas.sql','utf8'));
+ await as(a);
+ const regions=[[[.1,.2],[.2,.3],[.2,.1]]];
+ const [work]=(await db.query('update sw_annotations set regions=$2,decks_above=2 where id=$1 returning regions,decks_above',[first.id,JSON.stringify(regions)])).rows;
+ assert.deepEqual(work.regions,regions);
+ assert.equal(work.decks_above,2);
+ await assert.rejects(db.query('update sw_annotations set regions=$2 where id=$1',[first.id,'[[[0,0],[1,1]]]']));
+ await db.exec('reset role');
  await db.query("insert into sw_project_access values($1,$2,'view')",[p.id,b]);
  await db.query('delete from auth.users where id=$1',[a]);
  await db.query('delete from auth.users where id=$1',[b]);

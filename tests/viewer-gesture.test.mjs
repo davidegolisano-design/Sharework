@@ -1,3 +1,5 @@
+import polygonClipping from 'polygon-clipping';
+import {rectangularRegion} from '../src/work-regions.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -10,7 +12,7 @@ const source=(await readFile('src/viewer.js','utf8'))
  .replace(/^pdfjs\.GlobalWorkerOptions.*\n/m,'')
  .replace(/^const vendor=.*\n/m,'')
  .replace(/^export /gm,'');
-const Viewer=vm.runInNewContext(source+'\nViewer',{...model,emojiSymbols,Path2D:class {}});
+const Viewer=vm.runInNewContext(source+'\nViewer',{...model,emojiSymbols,polygonClipping,rectangularRegion,Path2D:class {}});
 
 test('The first tap after repeated pinches still opens both overlapping notes',()=>{
  const v=Object.create(Viewer.prototype);
@@ -58,7 +60,7 @@ test('Nearby icons remain in the chooser after zooming out to a panned overview'
  Object.assign(v,{
   container:{clientWidth:560,clientHeight:480},
   pdfPage:{getViewport:()=>({width:2200,height:480})},
-  zoom:2.5,panX:140,panY:-100,pageNumber:1,
+  zoom:1.15,panX:140,panY:-100,pageNumber:1,
   marks:[12,9,8,10,17].map((number,i)=>({
    id:number,number,page:1,kind:'note',shape:'triangle',projected:true,
    x:.47+[0,.003,-.038,-.046,.22][i],y:.64+ [0,-.026,-.026,-.026,0][i]
@@ -71,8 +73,8 @@ test('Nearby icons remain in the chooser after zooming out to a panned overview'
  };
  assert.deepEqual(tap(),[8,9,10,12]);
  v.zoom=12;
- assert.deepEqual(tap(),[9,12]);
- v.zoom=2.5;
+ assert.deepEqual(tap(),[12]);
+ v.zoom=1.15;
  v.panX=310;
  v.panY=-140;
  assert.deepEqual(tap(),[8,9,10,12]);
@@ -83,13 +85,24 @@ test('Highlight selection keeps a fixed margin from the visible stroke across zo
  Object.assign(v,{
   pageNumber:1,zoom:1,
   rect(){return {x:0,y:0,w:1000*this.zoom,h:500*this.zoom,scale:this.zoom};},
-  marks:[{id:1,page:1,kind:'note',x:.8,y:.8,width:20,strokes:[[[.1,.1],[.3,.1]],[[.1,.4],[.3,.4]]]}]
+  marks:[{id:1,page:1,kind:'note',x:.8,y:.8,width:20,strokes:[[[.1,.1],[.3,.1]],[[.1,.6],[.3,.6]]]}]
  });
  for(const zoom of [.5,1,3,.5]){
   v.zoom=zoom;
-  for(const y of [50,200]){
-   assert.equal(v.hit(200*zoom,y*zoom+10*zoom+11).length,1);
-   assert.equal(v.hit(200*zoom,y*zoom+10*zoom+13).length,0);
+  for(const y of [50,300]){
+   assert.equal(v.hit(200*zoom,y*zoom+10*zoom+24).length,1);
+   assert.equal(v.hit(200*zoom,y*zoom+10*zoom+26).length,0);
   }
  }
+});
+
+test('Clicking inside a unioned area includes its work and any nearby icon only once',()=>{
+ const v=Object.create(Viewer.prototype);
+ Object.assign(v,{pageNumber:1,rect:()=>({x:0,y:0,w:1000,h:500,scale:1}),marks:[
+  {id:1,page:1,kind:'note',shape:'circle',x:.8,y:.8,regions:[[[.1,.1],[.4,.1],[.4,.4],[.1,.4]],[[.3,.2],[.5,.2],[.5,.5],[.3,.5]]]},
+  {id:2,page:1,kind:'note',shape:'circle',x:.25,y:.25},
+  {id:3,page:1,kind:'note',shape:'circle',x:.295,y:.25}
+ ]});
+ assert.deepEqual(Array.from(v.hit(250,125),n=>n.id).sort(),[1,2]);
+ assert.deepEqual(Array.from(v.hit(450,220),n=>n.id),[1]);
 });
