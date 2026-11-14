@@ -1,12 +1,12 @@
-import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=03f283fa0580';
-import {projectCover} from './cards.js?v=03f283fa0580';
-import {watchChanges} from './realtime.js?v=03f283fa0580';
-import * as api from './api.js?v=03f283fa0580';
-import {Viewer,loadPdf,marker} from './viewer.js?v=03f283fa0580';
-import {snapshot,grouped,clamp,annotationStrokes,normalizeSearch,searchRanges} from './model.js?v=03f283fa0580';
-import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js?v=03f283fa0580';
-import {finishRegion,legacyRegions} from './work-regions.js?v=03f283fa0580';
-import {editShipPlan} from './ship-editor.js?v=03f283fa0580';
+import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=34426cf9c301';
+import {projectCover} from './cards.js?v=34426cf9c301';
+import {watchChanges} from './realtime.js?v=34426cf9c301';
+import * as api from './api.js?v=34426cf9c301';
+import {Viewer,loadPdf,marker} from './viewer.js?v=34426cf9c301';
+import {snapshot,grouped,clamp,annotationStrokes,normalizeSearch,searchRanges} from './model.js?v=34426cf9c301';
+import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js?v=34426cf9c301';
+import {finishRegion,legacyRegions} from './work-regions.js?v=34426cf9c301';
+import {editShipPlan} from './ship-editor.js?v=34426cf9c301';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
 let stopRealtime=null,refreshTimer,realtimeConnected=false,lastSafetyCheck=0,annotationRevision=0;
 const pendingSync=new Set();
@@ -557,7 +557,7 @@ $('export-works').onclick=async()=>{
  const name=page=>configuration?.decks.find(deck=>deck.page===page)?.name||tr('Pagina')+' '+page;
  button.disabled=true;
  try{
-  const {exportWorks}=await import('./work-export.js?v=03f283fa0580');
+  const {exportWorks}=await import('./work-export.js?v=34426cf9c301');
   if(canExportWorks()&&!$('workspace').hidden)await exportWorks(works,configuration,title,name,tr,locale());
  }catch(error){report(error);}
  finally{button.disabled=false;}
@@ -1075,11 +1075,11 @@ async function toolSettings(existing=null){
 $('note-settings').onclick=()=>toolSettings().catch(report);
 async function travel(isRedo){if(!canWrite()||finishPick||areaSession)return;const from=isRedo?redo:undo,to=isRedo?undo:redo,item=from.at(-1);if(!item||loading)return;const current=annotations.find(a=>a.id===item.id);if(!current||current.version!==item.expected)throw Error(tr('Annotazione aggiornata da un altro utente: impossibile annullare senza sovrascriverla.'));const result=await patch(current,isRedo?item.after:item.before);from.pop();to.push({...item,expected:result.version});const previous=from.findLast(entry=>entry.id===item.id);if(previous&&JSON.stringify(snapshot(result))===JSON.stringify(isRedo?previous.before:previous.after))previous.expected=result.version;updatePages();}
 $('undo').onclick=()=>travel(false).catch(report);$('redo').onclick=()=>travel(true).catch(report);
-function peopleSearch(box){
+function peopleSearch(box,{includeEmail=false}={}){
  const search=document.createElement('input');
  search.type='search';
  search.className='people-search';
- search.placeholder=tr('Cerca utenti per nome…');
+ search.placeholder=tr(includeEmail?'Cerca per nome o email…':'Cerca utenti per nome…');
  search.setAttribute('aria-label',search.placeholder);
  const list=text('div','','people-list');
  const empty=text('p',tr('Nessun utente trovato.'),'people-empty');
@@ -1087,16 +1087,19 @@ function peopleSearch(box){
  function update(){
   const query=normalizeSearch(search.value).trim();
   let matches=0;
-  for(const {name,key,row,label} of entries){
-   row.hidden=!key.includes(query);
-   if(!row.hidden){highlightMatch(label,name,query);matches++;}
+  for(const {name,key,row,label,email,emailLabel} of entries){
+   row.hidden=!key.includes(query)&&!normalizeSearch(email).includes(query);
+   if(row.hidden)continue;
+   highlightMatch(label,name,query);
+   if(emailLabel)highlightMatch(emailLabel,email,query);
+   matches++;
   }
   empty.hidden=matches>0;
  }
  search.addEventListener('input',update);
  box.append(search,list,empty);
  return {
-  append(name,row,label){entries.push({name,key:normalizeSearch(name),row,label});list.append(row);},
+  append(name,row,label,email='',emailLabel=null){entries.push({name,key:normalizeSearch(name),row,label,email,emailLabel});list.append(row);},
   update,
   get query(){return search.value;},
   set query(value){search.value=value;update();}
@@ -1105,17 +1108,24 @@ function peopleSearch(box){
 
 $('users-button').onclick=()=>manageUsers().catch(report);
 async function manageUsers(query=''){
- if(profile?.role!=='super_admin')return;
+ if(!profile?.approved||profile.role!=='super_admin')return;
  const box=modal(tr('Utenti'));
  const container=text('div','');
  box.append(container);
- const rows=await api.table('sw_profiles','select=*&order=created_at.desc');
+ const rows=await api.rpc('sw_manage_users_list',{});
  if(!container.isConnected||!dialogOpen)return;
- const search=peopleSearch(container);
+ const search=peopleSearch(container,{includeEmail:true});
  for(const p of rows){
   const row=text('div','','user-row'),summary=text('span',''),name=text('strong',p.full_name);
   summary.append(name,text('small',tr(roles[p.role])+' · '+(tr(p.approved?'Abilitato':'In attesa'))));
+  const email=p.email?text('small',p.email,'user-email'):null;
+  if(email)summary.append(email);
   row.append(summary);
+  const actions=text('div','','user-actions');
+  actions.append(btn(tr('Cambia nome'),async()=>{
+   await closeModal();
+   if(!dialogOpen)await renameUser(p,search.query);
+  }));
   if(p.id!==user.id){
    const role=document.createElement('select');
    role.setAttribute('aria-label',tr('Ruolo di')+' '+p.full_name);
@@ -1128,15 +1138,52 @@ async function manageUsers(query=''){
     try{await api.rpc('sw_set_role',{target:p.id,new_role:newRole});await closeModal();await manageUsers(search.query);}
     catch(e){role.value=p.role;report(e);}finally{role.disabled=false;}
    };
-   row.append(role,btn(tr(p.approved?'Disabilita':'Approva'),async()=>{
+   actions.append(role,btn(tr(p.approved?'Disabilita':'Approva'),async()=>{
     await api.rpc('sw_set_approval',{target:p.id,allow_access:!p.approved});
     await closeModal();
     await manageUsers(search.query);
    },p.approved?'':'primary'));
   }
-  search.append(p.full_name,row,name);
+  row.append(actions);
+  search.append(p.full_name,row,name,p.email||'',email);
  }
  search.query=query;
+}
+async function renameUser(person,query){
+ if(!profile?.approved||profile.role!=='super_admin')return;
+ const box=modal(tr('Cambia nome'));
+ const name=field(box,tr('Nome e cognome'),{value:person.full_name});
+ name.minLength=2;name.maxLength=120;name.required=true;
+ const save=btn(tr('Salva'),async()=>{
+  if(save.disabled)return;
+  const fullName=name.value.trim();
+  if(fullName.length<2||fullName.length>120){
+   toast(tr('Inserisci un nome da 2 a 120 caratteri.'));
+   return;
+  }
+  save.disabled=name.disabled=true;
+  dialogClose=()=>false;
+  try{
+   await api.rpc('sw_rename_user',{target:person.id,new_full_name:fullName});
+   if(person.id===user?.id&&profile){
+    profile={...profile,full_name:fullName};
+    document.querySelectorAll('.user-name').forEach(el=>el.textContent=fullName);
+   }
+   if(!box.contains(name))return;
+   dialogClose=null;
+   await closeModal();
+   toast(tr('Salvato'));
+   const nextQuery=normalizeSearch(person.full_name).includes(normalizeSearch(query).trim())&&
+    !normalizeSearch(fullName).includes(normalizeSearch(query).trim())?fullName:query;
+   await manageUsers(nextQuery);
+  }finally{
+   if(box.contains(name))dialogClose=null;
+   save.disabled=name.disabled=false;
+  }
+ },'primary');
+ $('dialog-footer').append(btn(tr('Annulla selezione'),async()=>{await closeModal();if(!dialogOpen)await manageUsers(query);}),save);
+ name.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();save.click();}});
+ name.focus();
 }
 function dismissNoteSession(){
  cancelPick();

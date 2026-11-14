@@ -161,6 +161,24 @@ test('Database permissions, approval, authorship, numbering and private files',a
  await assert.rejects(db.query("update sw_annotations set shape='unknown' where id=$1",[first.id]));
  await assert.rejects(db.query('update sw_annotations set regions=$2 where id=$1',[first.id,'[[[0,0],[1,1]]]']));
  await db.exec('reset role');
+ await db.exec(await readFile('supabase/015_super_admin_user_details.sql','utf8'));
+ await as(admin);
+ const [account]=(await db.query('select * from public.sw_manage_users_list() where id=$1',[a])).rows;
+ assert.equal(account.email,'mario@example.test');
+ await db.query('select public.sw_rename_user($1,$2)',[a,'  Mario Bianchi  ']);
+ assert.equal((await db.query('select full_name from public.sw_manage_users_list() where id=$1',[a])).rows[0].full_name,'Mario Bianchi');
+ await assert.rejects(db.query('select public.sw_rename_user($1,$2)',[a,' ']));
+ for(const role of ['admin','member','viewer']){
+  await db.query('select public.sw_set_role($1,$2)',[b,role]);
+  await as(b);
+  await assert.rejects(db.query('select * from public.sw_manage_users_list()'));
+  await assert.rejects(db.query('select public.sw_rename_user($1,$2)',[a,'Nome falsificato']));
+  await as(admin);
+ }
+ await as(null);
+ await assert.rejects(db.query('select * from public.sw_manage_users_list()'));
+ await assert.rejects(db.query('select public.sw_rename_user($1,$2)',[a,'Nome falsificato']));
+ await db.exec('reset role');
  await db.query("insert into sw_project_access values($1,$2,'view')",[p.id,b]);
  await db.query('delete from auth.users where id=$1',[a]);
  await db.query('delete from auth.users where id=$1',[b]);
