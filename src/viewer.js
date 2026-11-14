@@ -1,16 +1,12 @@
 import * as pdfjs from './vendor/build/pdf.mjs';
-import {normalized,segmentDistance,contrast,clamp,annotationStrokes,expandOverlappingMarkers} from './model.js';
+import {normalized,contrast,clamp,annotationStrokes,touchPart,touchSelection} from './model.js';
 pdfjs.GlobalWorkerOptions.workerSrc=new URL('./vendor/build/pdf.worker.mjs',import.meta.url).href;
 const vendor=new URL('./vendor/',import.meta.url).href;
 export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendor+'cmaps/',cMapPacked:true,standardFontDataUrl:vendor+'standard_fonts/',wasmUrl:vendor+'wasm/',iccUrl:vendor+'iccs/',isEvalSupported:false}).promise;}
 import {emojiSymbols} from './ship-model.js';
 const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
-// Use the part of the viewport covered by the sheet, including height-fitted overviews.
-function selectionPadding(rect,viewportWidth,viewportHeight){
- const magnification=Math.min(rect.w/viewportWidth,rect.h/viewportHeight);
- return clamp(64/Math.sqrt(magnification),28,76);
-}
+const touchMargin=12;
 const projectedOffset=markerRadius+5;
 
 export function marker(ctx,x,y,color,shape,number,r=markerRadius){
@@ -77,16 +73,26 @@ function markPosition(annotation,rect){
  return [annotation.projected?(pixels[0][0]+pixels.at(-1)[0])/2:x,y-Math.min(13,width/2)-8];
 }
 
-function markerBounds(annotation,rect){
+function markerTouchParts(annotation,rect){
  const [x,y]=markPosition(annotation,rect);
- const radius=markerRadius*1.3+2;
- const bounds={left:x-radius,right:x+radius,top:y-radius,bottom:y+radius};
+ const parts=[touchPart(x,y,x,y,markerRadius*1.3+2+touchMargin)];
  if(emojiSymbols[annotation.shape]&&annotation.number!=null){
-  const badgeHalfWidth=Math.max(7,String(annotation.number).length*4+3)+1;
-  bounds.right=Math.max(bounds.right,x+markerRadius*.65+badgeHalfWidth);
-  bounds.bottom=Math.max(bounds.bottom,y+markerRadius*.45+14);
+  const badgeX=x+markerRadius*.65,badgeY=y+markerRadius*.45+6.5;
+  const halfSpan=Math.max(0,String(annotation.number).length*4+3-6.5);
+  parts.push(touchPart(badgeX-halfSpan,badgeY,badgeX+halfSpan,badgeY,7.5+touchMargin));
  }
- return bounds;
+ return parts;
+}
+
+function annotationTouchParts(annotation,rect){
+ const parts=markerTouchParts(annotation,rect);
+ for(const stroke of annotationStrokes(annotation)){
+  const {width,pixels}=highlightGeometry(annotation,rect,stroke);
+  const radius=width/2+touchMargin;
+  if(pixels.length===1)parts.push(touchPart(...pixels[0],...pixels[0],radius));
+  for(let i=1;i<pixels.length;i++)parts.push(touchPart(...pixels[i-1],...pixels[i],radius));
+ }
+ return parts;
 }
 
 function markerY(annotation,rect){
@@ -197,7 +203,27 @@ export class Viewer{
   const tx=axis?Math.max(4,r.x+6):x+5,ty=axis?y-6:Math.max(16,r.y+17);
   ov.lineWidth=4;ov.strokeStyle='white';ov.strokeText(label,tx,ty);ov.fillText(label,tx,ty);
  }
- ov.restore();if(render){this.revision++;clearTimeout(this.timer);this.timer=setTimeout(()=>this.renderDetail(),100);}}
+ ov.restore();
+ if(this.showTouchAreas){
+  ov.save();
+  ov.globalAlpha=.24;
+  ov.fillStyle=ov.strokeStyle='#009ec4';
+  ov.lineCap='round';
+  for(const a of marks){
+   if(a.id===this.areaDraft?.id)continue;
+   for(const {ax,ay,bx,by,radius} of markerTouchParts(a,r)){
+    ov.beginPath();
+    if(ax===bx&&ay===by){ov.arc(ax,ay,radius,0,Math.PI*2);ov.fill();}
+    else{ov.moveTo(ax,ay);ov.lineTo(bx,by);ov.lineWidth=radius*2;ov.stroke();}
+   }
+   for(const stroke of annotationStrokes(a)){
+    const {width,pixels}=highlightGeometry(a,r,stroke);
+    this.strokeLine(ov,pixels,'#009ec4',width+2*touchMargin,24);
+   }
+  }
+  ov.restore();
+ }
+ if(render){this.revision++;clearTimeout(this.timer);this.timer=setTimeout(()=>this.renderDetail(),100);}}
  strokeLine(ctx,points,color,width,opacity){
   if(!points.length)return;
   ctx.save();
@@ -326,35 +352,18 @@ export class Viewer{
    }
    return;
   }
-  const hits=this.hit(point.x,point.y,e.pointerType);
+  const hits=this.hit(point.x,point.y);
   if(hits.length){this.callbacks.edit(hits);return;}
   if(this.mode==='note'&&inside){
    const [x,y]=normalized(point.x,point.y,this.rect());
    this.callbacks.create({kind:'note',x,y,...this.settings.note,points:[],width:18,opacity:100});
   }
  }
- hit(x,y,pointerType){
+ hit(x,y){
   const rect=this.rect();
   if(!rect)return [];
-  const padding=selectionPadding(rect,this.container.clientWidth,this.container.clientHeight);
-  const touchAllowance=pointerType==='touch'?12:0;
-  const candidates=[];
-  for(const a of this.marks){
-   if(a.page!==this.pageNumber||a.deleted)continue;
-   const bounds=markerBounds(a,rect);
-   let distance=Math.hypot(x-clamp(x,bounds.left,bounds.right),y-clamp(y,bounds.top,bounds.bottom));
-   for(const stroke of annotationStrokes(a)){
-    const {width,pixels}=highlightGeometry(a,rect,stroke);
-    let strokeDistance=Math.hypot(x-pixels[0][0],y-pixels[0][1]);
-    for(let i=1;i<pixels.length;i++){
-     strokeDistance=Math.min(strokeDistance,segmentDistance(x,y,...pixels[i-1],...pixels[i]));
-    }
-    distance=Math.min(distance,strokeDistance-width/2);
-   }
-   candidates.push({annotation:a,distance,bounds});
-  }
-  const radius=padding+touchAllowance;
-  return expandOverlappingMarkers(candidates,radius,56+touchAllowance)
-   .sort((a,b)=>a.distance-b.distance).map(item=>item.annotation);
+  const candidates=this.marks.filter(a=>a.page===this.pageNumber&&!a.deleted)
+   .map(annotation=>({annotation,parts:annotationTouchParts(annotation,rect)}));
+  return touchSelection(candidates,x,y).map(item=>item.annotation);
  }
 }

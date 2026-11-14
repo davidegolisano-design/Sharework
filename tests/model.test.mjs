@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {grouped,normalized,segmentDistance,snapshot,expandOverlappingMarkers} from '../src/model.js';
+import test from 'node:test';import assert from 'node:assert/strict';import {grouped,normalized,segmentDistance,snapshot,touchPart,touchSelection} from '../src/model.js';
 test('Grouping, normalized coordinates and hit detection',()=>{
  const a=[{id:1,page:3,created_at:'a'},{id:2,page:1,created_at:'b'},{id:3,page:1,created_at:'a'},{id:4,page:1,created_at:'c',deleted:true}];
  assert.deepEqual(grouped(a,1,false).map(x=>x.id),[3,2]);assert.deepEqual(grouped(a,1,true).map(x=>x.id),[3,2,1]);
@@ -74,13 +74,23 @@ test('A multi-stroke note projects separate intervals under one note identity',(
  assert.ok(mark.strokes[0][1][0]<mark.strokes[1][0][0]);
 });
 
-test('A tap on the edge of a marker includes the whole overlapping stack',()=>{
- const candidate=(id,left,distance,top=0)=>({id,distance,bounds:{left,right:left+34,top,bottom:top+34}});
- const front=candidate('front',0,0);
- const hidden=candidate('hidden',30,30);
- const behind=candidate('behind',60,60);
- const detached=candidate('detached',100,100);
- const above=candidate('above',30,50,-40);
- assert.deepEqual(expandOverlappingMarkers([front,hidden,behind,detached,above],20).map(item=>item.id),['front','hidden','behind']);
- assert.deepEqual(expandOverlappingMarkers([front,hidden],-1),[]);
+test('Touch areas form a group even when only one area contains the tap',()=>{
+ const marker=(id,x,y)=>({id,parts:[touchPart(x,y,x,y,20)]});
+ const front=marker('front',0,0);
+ const hidden=marker('hidden',38,0);
+ const behind=marker('behind',78,0);
+ const detached=marker('detached',119,0);
+ const diagonal=marker('diagonal',-39,39);
+ assert.deepEqual(touchSelection([front,hidden,behind,detached,diagonal],-15,0).map(item=>item.id),['front','hidden','behind']);
+ assert.deepEqual(touchSelection([front,hidden],0,40),[]);
+});
+
+test('Touch groups follow actual highlight paths, including crossings',()=>{
+ const stroke=(id,...coords)=>({id,parts:[touchPart(...coords,12)]});
+ const first=stroke('first',0,0,200,0);
+ const crossing=stroke('crossing',100,-100,100,100);
+ const nearby=stroke('nearby',124,70,200,70);
+ const outside=stroke('outside',160,-30,200,-30);
+ const separate=stroke('separate',125,-65,200,-65);
+ assert.deepEqual(touchSelection([first,crossing,nearby,outside,separate],10,4).map(item=>item.id),['first','crossing','nearby']);
 });

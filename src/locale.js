@@ -1,4 +1,5 @@
 const english = {
+ "Aree di tocco":"Touch areas",
  "Sessione terminata per inattività. Accedi di nuovo.":"You were signed out due to inactivity. Sign in again.",
  "Evidenzia area":"Highlight area",
  "Modifica area":"Edit area",
