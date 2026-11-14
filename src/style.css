@@ -81,14 +81,13 @@ button.primary:hover{background:#24417e;border-color:#24417e}
 #mobile-tools summary,#mobile-notes,#notes-close{display:none}
 @media (max-width:960px),(max-height:550px) and (orientation:landscape){
  #workspace-body{position:relative;flex-direction:row}
- #toolbar{position:relative;z-index:6;display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto auto;gap:3px;min-height:46px;overflow:visible;padding:3px 5px}
+ #toolbar{position:relative;z-index:6;display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto;gap:3px;min-height:46px;overflow:visible;padding:3px 5px}
  #toolbar button,#toolbar select,#mobile-tools summary{min-width:0;min-height:40px;padding:4px 6px;font-size:12px}
  #toolbar #back-projects{grid-column:1;grid-row:1}
  #toolbar #ship-pages{grid-column:2;grid-row:1;width:100%;max-width:none;background:#fff;z-index:1}
- #toolbar #fit{grid-column:3;grid-row:1}
- #toolbar #laser-view{grid-column:4;grid-row:1}
- #mobile-notes{display:block;grid-column:5;grid-row:1}
- #mobile-tools{display:block;grid-column:6;grid-row:1}
+ #toolbar #laser-view{grid-column:3;grid-row:1}
+ #mobile-notes{display:block;grid-column:4;grid-row:1}
+ #mobile-tools{display:block;grid-column:5;grid-row:1}
  #mobile-tools summary{display:grid;place-items:center;cursor:pointer;list-style:none;font-size:19px}
  #mobile-tools summary::-webkit-details-marker{display:none}
  #mobile-tools:not([open]) .tool-dropdown{display:none}
@@ -106,7 +105,6 @@ button.primary:hover{background:#24417e;border-color:#24417e}
  .intro-plan{margin-top:16px}
 }
 
-#touch-areas[aria-pressed="true"]{background:#ccf0f7;color:#164461;border-color:#009ec4}
 #laser-view[aria-pressed="true"]{background:#e3ffca;color:#21430f;box-shadow:inset 0 0 0 1px #47891b}
 #viewport.laser-active{cursor:crosshair}
 
@@ -211,7 +209,7 @@ dialog textarea{min-height:85px}
 }
 
 @media (min-width:601px) and (max-width:960px) and (min-height:551px){
- #toolbar{grid-template-columns:auto minmax(10rem,1fr) repeat(4,auto)}
+ #toolbar{grid-template-columns:auto minmax(10rem,1fr) repeat(3,auto)}
  #toolbar button,#toolbar select,#mobile-tools summary{min-height:38px;padding-inline:11px;font-size:12px}
  #mobile-tools summary{font-size:18px}
 }
@@ -221,3 +219,9 @@ dialog textarea{min-height:85px}
 .delete-confirmation{display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:flex-end;padding:8px;border:1px solid #e7c9cc;border-radius:8px;background:#fff7f8}
 .delete-confirmation p{flex-basis:100%;margin:0;font-size:12px;font-weight:600}
 #dialog-body .delete-annotation{margin-top:8px}
+
+.people-list{margin-top:6px}
+.people-empty{margin:12px 0 0;color:var(--muted);font-size:13px}
+.people-list .user-row{gap:8px}
+.people-list .user-row span{min-width:0;overflow-wrap:anywhere}
+@media (max-width:420px){.people-list .user-row{display:grid;grid-template-columns:1fr auto}.people-list .user-row span{grid-column:1/-1}}

@@ -1,9 +1,9 @@
 import * as pdfjs from './vendor/build/pdf.mjs';
-import {normalized,contrast,clamp,annotationStrokes,segmentDistance,pointInRing,clickRadius,touchSelection} from './model.js?v=1260bf2435fe';
+import {normalized,contrast,clamp,annotationStrokes,segmentDistance,pointInRing,touchSelection} from './model.js?v=c2bcde7bf0b7';
 pdfjs.GlobalWorkerOptions.workerSrc=new URL('./vendor/build/pdf.worker.mjs',import.meta.url).href;
 const vendor=new URL('./vendor/',import.meta.url).href;
 export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendor+'cmaps/',cMapPacked:true,standardFontDataUrl:vendor+'standard_fonts/',wasmUrl:vendor+'wasm/',iccUrl:vendor+'iccs/',isEvalSupported:false}).promise;}
-import {emojiSymbols} from './ship-model.js?v=1260bf2435fe';
+import {emojiSymbols} from './ship-model.js?v=c2bcde7bf0b7';
 const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
 const emojiSize=r=>r*1.8;
@@ -13,7 +13,7 @@ const badgeWidth=metrics=>Math.max(14,metrics.width+6);
 const rectangleDistance=(x,y,left,top,right,bottom)=>
  Math.hypot(Math.max(0,left-x,x-right),Math.max(0,top-y,y-bottom));
 import polygonClipping from './vendor/polygon-union.js';
-import {rectangularRegion} from './work-regions.js?v=1260bf2435fe';
+import {rectangularRegion} from './work-regions.js?v=c2bcde7bf0b7';
 const regionCache=new WeakMap();
 function unionRegions(regions){
  if(!regions?.length)return [];
@@ -184,7 +184,7 @@ export class Viewer{
   };
  }
  async open(pdf,page=1){this.clear();this.pdf=pdf;await this.page(page);}
- clear(){this.pageRequest=(this.pageRequest||0)+1;this.revision++;clearTimeout(this.timer);this.task?.cancel();this.pdf=null;this.pdfPage=null;this.detail=null;this.marks=[];this.areaDraft=null;this.touchPoint=null;clearTimeout(this.touchTimer);this.laser=null;this.pick=null;this.guides=[];this.mode=null;this.resetGesture(false);this.draw();}
+ clear(){this.pageRequest=(this.pageRequest||0)+1;this.revision++;clearTimeout(this.timer);this.task?.cancel();this.pdf=null;this.pdfPage=null;this.detail=null;this.marks=[];this.areaDraft=null;this.laser=null;this.pick=null;this.guides=[];this.mode=null;this.resetGesture(false);this.draw();}
  async page(n){if(!this.pdf)return;const request=this.pageRequest=(this.pageRequest||0)+1;this.revision++;this.task?.cancel();clearTimeout(this.timer);const p=await this.pdf.getPage(n);if(request!==this.pageRequest)return;this.task?.cancel();this.resetGesture(false);this.pdfPage=p;this.pageNumber=n;this.zoom=1;this.minZoom=1;this.panX=this.panY=0;this.detail=null;this.draw();}
  rect(){if(!this.pdfPage)return null;const v=this.pdfPage.getViewport({scale:1}),w=this.container.clientWidth,h=this.container.clientHeight;const scale=Math.max(.0001,Math.min((w-24)/v.width,(h-24)/v.height))*this.zoom;return {x:(w-v.width*scale)/2+this.panX,y:(h-v.height*scale)/2+this.panY,w:v.width*scale,h:v.height*scale,scale};}
  viewCenter(visibleWidth=this.container.clientWidth){
@@ -215,8 +215,7 @@ export class Viewer{
   this.zoom=Math.max(this.zoom,5);
   this.centerView(x,y,{visibleWidth});
  }
- fit(){this.zoom=1;this.minZoom=1;this.panX=this.panY=0;this.draw();}
- zoomAt(f,x,y){const r=this.rect();if(!r)return;this.touchPoint=null;const next=Math.max(this.minZoom??1,this.zoom*f);if(!Number.isFinite(next))return;const ratio=next/this.zoom;this.panX=(this.panX+this.container.clientWidth/2-x)*ratio+x-this.container.clientWidth/2;this.panY=(this.panY+this.container.clientHeight/2-y)*ratio+y-this.container.clientHeight/2;this.zoom=next;this.draw();}
+ zoomAt(f,x,y){const r=this.rect();if(!r)return;const next=Math.max(this.minZoom??1,this.zoom*f);if(!Number.isFinite(next))return;const ratio=next/this.zoom;this.panX=(this.panX+this.container.clientWidth/2-x)*ratio+x-this.container.clientWidth/2;this.panY=(this.panY+this.container.clientHeight/2-y)*ratio+y-this.container.clientHeight/2;this.zoom=next;this.draw();}
  setMarks(marks){this.marks=marks;this.draw(false);}
  draw(render=true){const w=this.container.clientWidth,h=this.container.clientHeight;if(!w||!h)return;this.ratio=Math.min(devicePixelRatio||1,Math.sqrt(10000000/(w*h)));for(const c of [this.canvas,this.overlay]){if(c.width!==Math.round(w*this.ratio)||c.height!==Math.round(h*this.ratio)){c.width=Math.round(w*this.ratio);c.height=Math.round(h*this.ratio);}}
  const ctx=this.canvas.getContext('2d');ctx.setTransform(this.ratio,0,0,this.ratio,0,0);ctx.clearRect(0,0,w,h);const ov=this.overlay.getContext('2d');ov.setTransform(this.ratio,0,0,this.ratio,0,0);ov.clearRect(0,0,w,h);const r=this.rect();if(!r)return;ctx.fillStyle='white';ctx.fillRect(r.x,r.y,r.w,r.h);if(this.detail){const d=this.detail,k=r.scale/d.rect.scale;ctx.drawImage(d.canvas,(r.x-d.rect.x*k),(r.y-d.rect.y*k),d.w*k,d.h*k);}
@@ -258,13 +257,6 @@ export class Viewer{
   ov.lineWidth=4;ov.strokeStyle='white';ov.strokeText(label,tx,ty);ov.fillText(label,tx,ty);
  }
  ov.restore();
- if(this.showTouchAreas&&this.touchPoint){
-  const {x,y,count}=this.touchPoint;
-  ov.save();ov.beginPath();ov.arc(x,y,clickRadius,0,Math.PI*2);
-  ov.fillStyle='#009ec433';ov.strokeStyle='#007caa';ov.lineWidth=2;ov.fill();ov.stroke();
-  numberBadge(ov,clamp(x+clickRadius,12,w-12),clamp(y-clickRadius,9,h-9),count);
-  ov.restore();
- }
  if(render){this.revision++;clearTimeout(this.timer);this.timer=setTimeout(()=>this.renderDetail(),100);}}
  drawRegions(ctx,rect,regions,color,merge=true){
   const polygons=merge?unionRegions(regions):regions.map(ring=>[ring]);
@@ -322,11 +314,6 @@ export class Viewer{
   // A primary contact starts a new touch stream, even if a WebView lost an
   // up/cancel event from the previous pinch.
   if(e.isPrimary&&this.pointers.size)this.resetGesture();
-  if(this.touchPoint){
-   clearTimeout(this.touchTimer);
-   this.touchPoint=null;
-   this.draw(false);
-  }
   this.container.setPointerCapture(e.pointerId);
   const point=this.local(e);
   this.pointers.set(e.pointerId,point);
@@ -427,10 +414,6 @@ export class Viewer{
    return;
   }
   const hits=this.hit(point.x,point.y);
-  if(this.showTouchAreas){
-   this.touchPoint={...point,count:new Set(hits.map(item=>item.id)).size};clearTimeout(this.touchTimer);this.draw(false);
-   this.touchTimer=setTimeout(()=>{this.touchPoint=null;this.draw(false);},1300);
-  }
   if(hits.length){this.callbacks.edit?.(hits,e);return;}
   if(this.mode==='note'&&inside){
    const [x,y]=normalized(point.x,point.y,this.rect());
