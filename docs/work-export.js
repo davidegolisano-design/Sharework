@@ -1,5 +1,5 @@
 import writeExcelFile from './vendor/workbook.js';
-import {frameAt,workDecks,workFrameRange} from './ship-model.js?v=4655d7915517';
+import {frameAt,workDecks,workFrameRange} from './ship-model.js?v=1260bf2435fe';
 
 export async function exportWorks(annotations,plan,name,pageName,tr,locale){
  const headers=['Numero','Titolo','Descrizione','Ponte di origine','Ponti coinvolti','Frame del simbolo','Frame iniziale','Frame finale','Autore','Data'];

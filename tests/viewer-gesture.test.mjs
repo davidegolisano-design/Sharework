@@ -143,3 +143,47 @@ test('Overlaid flames remain separately selectable when emoji ink metrics are to
  v.panX=-130;
  assert.deepEqual(hit(),[11,12]);
 });
+
+test('Touch lift drift does not drop a second icon at the edge of the tap circle',()=>{
+ const v=Object.create(Viewer.prototype);
+ const selections=[];
+ Object.assign(v,{
+  pointers:new Map(),pdfPage:{},pageNumber:1,draw(){},
+  rect:()=>({x:0,y:0,w:1000,h:500,scale:1}),
+  container:{clientWidth:1000,clientHeight:500,setPointerCapture(){},
+   getBoundingClientRect:()=>({left:0,top:0,width:1000,height:500})},
+  callbacks:{edit:items=>selections.push(Array.from(items,a=>a.id))},
+  marks:[{id:1,page:1,kind:'note',x:.5,y:.5},{id:2,page:1,kind:'note',x:.54,y:.5}]
+ });
+ const event=(clientX)=>({pointerId:1,isPrimary:true,pointerType:'touch',clientX,clientY:250,preventDefault(){}});
+ v.down(event(500));v.up(event(492));
+ v.down(event(500));v.move(event(460));v.up(event(460));
+ assert.deepEqual(selections,[[1,2]]);
+});
+
+test('Dialog guards block the plan tap and require a fresh button press while allowing keyboard',async()=>{
+ const app=await readFile('src/app.js','utf8');
+ const source=app.slice(app.indexOf("const appDialog=$('dialog');"),app.indexOf('function field('));
+ const listeners={};
+ const appDialog={addEventListener:(type,handler)=>{listeners[type]=handler;}};
+ let now=100;
+ const sandbox=vm.createContext({$:id=>id==='dialog'?appDialog:{},performance:{now:()=>now}});
+ vm.runInContext(source,sandbox);
+ const button={}, target={closest:()=>button};
+ const click=(detail,pointerId=7,pointerType='touch')=>{
+  let blocked=false;
+  listeners.click({detail,pointerId,pointerType,target,clientX:180,clientY:420,
+   preventDefault(){blocked=true;},stopImmediatePropagation(){}});
+  return blocked;
+ };
+ vm.runInContext('planActivation={x:180,y:420,time:100}',sandbox);
+ assert.equal(click(1),true);
+ listeners.pointerdown({target,pointerId:7});
+ assert.equal(click(1),true);
+ now=500;
+ listeners.pointerdown({target,pointerId:7});
+ assert.equal(click(1,8),true);
+ listeners.pointerdown({target,pointerId:7});
+ assert.equal(click(1),false);
+ assert.equal(click(0,-1,''),false);
+});

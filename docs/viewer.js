@@ -1,9 +1,9 @@
 import * as pdfjs from './vendor/build/pdf.mjs';
-import {normalized,contrast,clamp,annotationStrokes,segmentDistance,pointInRing,clickRadius,touchSelection} from './model.js?v=4655d7915517';
+import {normalized,contrast,clamp,annotationStrokes,segmentDistance,pointInRing,clickRadius,touchSelection} from './model.js?v=1260bf2435fe';
 pdfjs.GlobalWorkerOptions.workerSrc=new URL('./vendor/build/pdf.worker.mjs',import.meta.url).href;
 const vendor=new URL('./vendor/',import.meta.url).href;
 export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendor+'cmaps/',cMapPacked:true,standardFontDataUrl:vendor+'standard_fonts/',wasmUrl:vendor+'wasm/',iccUrl:vendor+'iccs/',isEvalSupported:false}).promise;}
-import {emojiSymbols} from './ship-model.js?v=4655d7915517';
+import {emojiSymbols} from './ship-model.js?v=1260bf2435fe';
 const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
 const emojiSize=r=>r*1.8;
@@ -13,7 +13,7 @@ const badgeWidth=metrics=>Math.max(14,metrics.width+6);
 const rectangleDistance=(x,y,left,top,right,bottom)=>
  Math.hypot(Math.max(0,left-x,x-right),Math.max(0,top-y,y-bottom));
 import polygonClipping from './vendor/polygon-union.js';
-import {rectangularRegion} from './work-regions.js?v=4655d7915517';
+import {rectangularRegion} from './work-regions.js?v=1260bf2435fe';
 const regionCache=new WeakMap();
 function unionRegions(regions){
  if(!regions?.length)return [];
@@ -259,9 +259,11 @@ export class Viewer{
  }
  ov.restore();
  if(this.showTouchAreas&&this.touchPoint){
-  const {x,y}=this.touchPoint;
+  const {x,y,count}=this.touchPoint;
   ov.save();ov.beginPath();ov.arc(x,y,clickRadius,0,Math.PI*2);
-  ov.fillStyle='#009ec433';ov.strokeStyle='#007caa';ov.lineWidth=2;ov.fill();ov.stroke();ov.restore();
+  ov.fillStyle='#009ec433';ov.strokeStyle='#007caa';ov.lineWidth=2;ov.fill();ov.stroke();
+  numberBadge(ov,clamp(x+clickRadius,12,w-12),clamp(y-clickRadius,9,h-9),count);
+  ov.restore();
  }
  if(render){this.revision++;clearTimeout(this.timer);this.timer=setTimeout(()=>this.renderDetail(),100);}}
  drawRegions(ctx,rect,regions,color,merge=true){
@@ -315,7 +317,7 @@ export class Viewer{
  }
 
  down(e){
-  if(!this.pdfPage)return;
+  if(!this.pdfPage||(e.pointerType==='mouse'&&e.button!==0))return;
   e.preventDefault();
   // A primary contact starts a new touch stream, even if a WebView lost an
   // up/cancel event from the previous pinch.
@@ -393,10 +395,13 @@ export class Viewer{
 
  up(e){
   if(!this.releasePointer(e.pointerId)||this.pointers.size)return;
+  const release=this.local(e);
+  const tolerance=this.areaDraft||e.pointerType!=='touch'?3:12;
+  this.moved||=Math.hypot(release.x-this.start.x,release.y-this.start.y)>tolerance;
   let stroke=this.stroke;
   this.stroke=null;
   if(stroke&&this.moved&&!this.multi){
-   const point=this.local(e),end=normalized(point.x,point.y,this.rect());
+   const end=normalized(release.x,release.y,this.rect());
    if(this.areaDraft.tool==='rectangle')stroke=rectangularRegion(stroke[0],end);
    else if(stroke.length<2000)stroke.push(end);
   }
@@ -405,7 +410,9 @@ export class Viewer{
    this.draw(false);
    return;
   }
-  const point=this.local(e);
+  // The user aims on contact. Small drift while lifting should not move
+  // the circle away from the group they touched.
+  const point=e.pointerType==='touch'?this.start:release;
   const inside=this.onSheet(point);
   if(this.areaDraft){
    if(this.mode==='area'&&this.areaDraft.tool==='polygon'&&inside)this.callbacks.vertex?.(normalized(point.x,point.y,this.rect()));
@@ -421,10 +428,10 @@ export class Viewer{
   }
   const hits=this.hit(point.x,point.y);
   if(this.showTouchAreas){
-   this.touchPoint=point;clearTimeout(this.touchTimer);this.draw(false);
+   this.touchPoint={...point,count:new Set(hits.map(item=>item.id)).size};clearTimeout(this.touchTimer);this.draw(false);
    this.touchTimer=setTimeout(()=>{this.touchPoint=null;this.draw(false);},1300);
   }
-  if(hits.length){this.callbacks.edit(hits);return;}
+  if(hits.length){this.callbacks.edit?.(hits,e);return;}
   if(this.mode==='note'&&inside){
    const [x,y]=normalized(point.x,point.y,this.rect());
    this.callbacks.create({kind:'note',x,y,...this.settings.note,points:[],width:18,opacity:100});

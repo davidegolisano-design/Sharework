@@ -215,3 +215,9 @@ dialog textarea{min-height:85px}
  #toolbar button,#toolbar select,#mobile-tools summary{min-height:38px;padding-inline:11px;font-size:12px}
  #mobile-tools summary{font-size:18px}
 }
+
+.delete-annotation:has(.delete-confirmation:not([hidden])){flex-basis:100%}
+.delete-annotation>button{width:100%}
+.delete-confirmation{display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:flex-end;padding:8px;border:1px solid #e7c9cc;border-radius:8px;background:#fff7f8}
+.delete-confirmation p{flex-basis:100%;margin:0;font-size:12px;font-weight:600}
+#dialog-body .delete-annotation{margin-top:8px}
