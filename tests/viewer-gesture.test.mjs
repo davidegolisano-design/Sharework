@@ -58,7 +58,7 @@ test('Nearby icons remain in the chooser after zooming out to a panned overview'
  Object.assign(v,{
   container:{clientWidth:560,clientHeight:480},
   pdfPage:{getViewport:()=>({width:2200,height:480})},
-  zoom:4,panX:140,panY:-100,pageNumber:1,
+  zoom:2.5,panX:140,panY:-100,pageNumber:1,
   marks:[12,9,8,10,17].map((number,i)=>({
    id:number,number,page:1,kind:'note',shape:'triangle',projected:true,
    x:.47+[0,.003,-.038,-.046,.22][i],y:.64+ [0,-.026,-.026,-.026,0][i]
@@ -67,13 +67,29 @@ test('Nearby icons remain in the chooser after zooming out to a panned overview'
  const tap=()=>{
   const rect=v.rect();
   // The lower-right edge of note 12 is farther from the neighboring icons.
-  return Array.from(v.hit(rect.x+.47*rect.w+15,rect.y+.64*rect.h-9,'mouse'),note=>note.id).sort((a,b)=>a-b);
+  return Array.from(v.hit(rect.x+.47*rect.w+15,rect.y+.64*rect.h-9),note=>note.id).sort((a,b)=>a-b);
  };
  assert.deepEqual(tap(),[8,9,10,12]);
  v.zoom=12;
  assert.deepEqual(tap(),[9,12]);
- v.zoom=4;
+ v.zoom=2.5;
  v.panX=310;
  v.panY=-140;
  assert.deepEqual(tap(),[8,9,10,12]);
+});
+
+test('Highlight selection keeps a fixed margin from the visible stroke across zoom levels',()=>{
+ const v=Object.create(Viewer.prototype);
+ Object.assign(v,{
+  pageNumber:1,zoom:1,
+  rect(){return {x:0,y:0,w:1000*this.zoom,h:500*this.zoom,scale:this.zoom};},
+  marks:[{id:1,page:1,kind:'note',x:.8,y:.8,width:20,strokes:[[[.1,.1],[.3,.1]],[[.1,.4],[.3,.4]]]}]
+ });
+ for(const zoom of [.5,1,3,.5]){
+  v.zoom=zoom;
+  for(const y of [50,200]){
+   assert.equal(v.hit(200*zoom,y*zoom+10*zoom+11).length,1);
+   assert.equal(v.hit(200*zoom,y*zoom+10*zoom+13).length,0);
+  }
+ }
 });

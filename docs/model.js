@@ -12,31 +12,51 @@ export function annotationStrokes(annotation){
  return [];
 }
 
-// Keep nearby choices relative to the symbol the user hit. The marker size
-// is fixed on screen even when the PDF zoom changes.
-export function expandOverlappingMarkers(candidates,radius,neighborGap=0){
- const queue=candidates.filter(item=>item.distance<=radius);
- const selected=new Set(queue);
- const anchor=queue.reduce((nearest,item)=>!nearest||item.distance<nearest.distance?item:nearest,null);
- if(anchor&&neighborGap>0){
-  for(const item of candidates){
-   if(selected.has(item)||!boundsNear(anchor.bounds,item.bounds,neighborGap))continue;
-   selected.add(item);
-   queue.push(item);
-  }
- }
- for(let i=0;i<queue.length;i++){
-  for(const item of candidates){
-   if(selected.has(item)||!boundsNear(queue[i].bounds,item.bounds,0))continue;
-   selected.add(item);
-   queue.push(item);
-  }
- }
- return queue;
+// Each part is a segment with a radius in screen pixels. A marker is a segment
+// whose endpoints coincide. Bounds reject distant pairs before checking strokes.
+export function touchPart(ax,ay,bx,by,radius){
+ return {ax,ay,bx,by,radius,left:Math.min(ax,bx)-radius,right:Math.max(ax,bx)+radius,
+  top:Math.min(ay,by)-radius,bottom:Math.max(ay,by)+radius};
 }
 
-function boundsNear(a,b,gap){
- const horizontal=Math.max(0,a.left-b.right,b.left-a.right);
- const vertical=Math.max(0,a.top-b.bottom,b.top-a.bottom);
- return Math.hypot(horizontal,vertical)<=gap;
+function boundsTouch(a,b){
+ return a.right>=b.left&&b.right>=a.left&&a.bottom>=b.top&&b.bottom>=a.top;
+}
+
+function partsTouch(a,b){
+ if(!boundsTouch(a,b))return false;
+ const radius=a.radius+b.radius;
+ if(segmentDistance(a.ax,a.ay,b.ax,b.ay,b.bx,b.by)<=radius||
+    segmentDistance(a.bx,a.by,b.ax,b.ay,b.bx,b.by)<=radius||
+    segmentDistance(b.ax,b.ay,a.ax,a.ay,a.bx,a.by)<=radius||
+    segmentDistance(b.bx,b.by,a.ax,a.ay,a.bx,a.by)<=radius)return true;
+ // Interior crossings can be farther than the radius from all four endpoints.
+ const side=(segment,x,y)=>(segment.bx-segment.ax)*(y-segment.ay)-(segment.by-segment.ay)*(x-segment.ax);
+ return side(a,b.ax,b.ay)*side(a,b.bx,b.by)<0&&side(b,a.ax,a.ay)*side(b,a.bx,a.by)<0;
+}
+
+export function touchSelection(candidates,x,y){
+ const distance=part=>segmentDistance(x,y,part.ax,part.ay,part.bx,part.by)-part.radius;
+ const items=candidates.map(item=>{
+  const bounds={left:Infinity,top:Infinity,right:-Infinity,bottom:-Infinity};
+  for(const part of item.parts){
+   bounds.left=Math.min(bounds.left,part.left);
+   bounds.top=Math.min(bounds.top,part.top);
+   bounds.right=Math.max(bounds.right,part.right);
+   bounds.bottom=Math.max(bounds.bottom,part.bottom);
+  }
+  return {item,bounds};
+ });
+ const point={left:x,right:x,top:y,bottom:y};
+ const seeds=items.filter(({bounds})=>boundsTouch(bounds,point)).map(entry=>({
+  entry,distance:entry.item.parts.reduce((min,part)=>Math.min(min,distance(part)),Infinity)
+ })).filter(hit=>hit.distance<=0).sort((a,b)=>a.distance-b.distance);
+ const selected=new Set(seeds.map(hit=>hit.entry));
+ for(const current of selected){
+  for(const entry of items){
+   if(selected.has(entry)||!boundsTouch(current.bounds,entry.bounds))continue;
+   if(current.item.parts.some(a=>entry.item.parts.some(b=>partsTouch(a,b))))selected.add(entry);
+  }
+ }
+ return [...selected].map(({item})=>item);
 }

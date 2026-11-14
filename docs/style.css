@@ -114,6 +114,7 @@ button.primary:hover{background:#24417e;border-color:#24417e}
  .intro-plan{margin-top:16px}
 }
 
+#touch-areas[aria-pressed="true"]{background:#ccf0f7;color:#164461;border-color:#009ec4}
 #laser-view[aria-pressed="true"]{background:#e3ffca;color:#21430f;box-shadow:inset 0 0 0 1px #47891b}
 #viewport.laser-active{cursor:crosshair}
 
