@@ -250,3 +250,15 @@ dialog textarea{min-height:85px}
 
 .annotation.annotation-completed{background:#d2efda;border-bottom:1px solid #8ac99a;padding-inline:8px;color:#154925}
 .annotation-completed .work-badge{background:#25713c;color:#fff}
+
+.catalog-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:8px;padding:6px 0}
+.catalog-row label{margin:0}
+.catalog-row input{min-height:42px;padding:8px 10px}
+.catalog-status{margin:8px 0;font-size:13px}
+.catalog-status:empty,.print-options+p:empty{display:none}
+.catalog-emoji-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.catalog-emoji-list span{background:#edf1fa;border-radius:8px;padding:5px 9px;font-size:13px}
+.print-options{display:grid;gap:8px}
+.print-options button{white-space:normal}
+.print-options+p{margin:10px 0 0}
+@media(max-width:540px){.project-header{gap:8px;padding-inline:12px}.header-actions{flex-wrap:wrap;justify-content:flex-end}.header-actions button{white-space:normal}}

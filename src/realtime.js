@@ -15,7 +15,7 @@ export function watchChanges(onChange,onConnection=()=>{}){
   let joinRef;
   socket.onopen=()=>{
    awaiting=false;
-   joinRef=send('phx_join',{config:{broadcast:{self:false,ack:false},presence:{enabled:false},postgres_changes:['sw_projects','sw_documents','sw_annotations','sw_profiles'].map(table=>({event:'*',schema:'public',table}))},access_token:lastToken});
+   joinRef=send('phx_join',{config:{broadcast:{self:false,ack:false},presence:{enabled:false},postgres_changes:['sw_projects','sw_documents','sw_annotations','sw_profiles','sw_work_categories','sw_work_emoji'].map(table=>({event:'*',schema:'public',table}))},access_token:lastToken});
    joinTimer=setTimeout(()=>socket.close(),12000);
    heartbeat=setInterval(()=>{
     if(awaiting){socket.close();return;}

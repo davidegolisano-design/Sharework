@@ -1,5 +1,5 @@
-import {workState} from './work-schedule.js?v=655cb7f2c255';
-import {annotationStrokes,normalizeSearch} from './model.js?v=655cb7f2c255';
+import {workState} from './work-schedule.js?v=e5323f5aad68';
+import {annotationStrokes,normalizeSearch} from './model.js?v=e5323f5aad68';
 export const workCategories=[
  ['scaffolding','🪜','Ponteggio'],['hot_work','🔥','Lavoro a caldo'],['lifting','🏗️','Sollevamento'],
  ['mechanical','⚙️','Meccanica'],['pipework','🚰','Tubisteria'],['electrical','⚡','Elettrico'],
@@ -17,7 +17,7 @@ export const geometricSymbols={circle:'●',square:'■',diamond:'◆',triangle:
 
 export function noteCategory(note){
  const category=categoriesById.get(shapeCategories[note.shape]);
- if(category)return {key:category[0],icon:category[1],label:category[2]};
+ if(category)return {key:category[0],icon:category[1],label:category[2],renamed:category[3]};
  const icon=geometricSymbols[note.shape];
  const label=note.custom_category?.trim();
  return icon&&label?{key:'custom:'+normalizeSearch(label),icon,label,custom:true}:null;
@@ -35,6 +35,28 @@ export const noteShapes = [
   ['circle', 'Punto'], ['square', 'Quadrato'], ['diamond', 'Rombo'], ['triangle', 'Triangolo'],
   ...workSymbols.map(([key,,label])=>[key,label])
 ];
+
+const builtInShapeCount=noteShapes.length;
+export function setWorkCatalog(rows){
+ for(const [id] of noteShapes.splice(builtInShapeCount)){
+  delete emojiSymbols[id];
+  delete shapeCategories[id];
+ }
+ const byId=new Map(rows.map(row=>[row.id,row]));
+ for(const [id,icon,defaultLabel] of workCategories){
+  const row=byId.get(id);
+  categoriesById.set(id,[id,icon,row?.name||defaultLabel,Boolean(row?.name)]);
+  for(const emoji of row?.sw_work_emoji||[]){
+   emojiSymbols[emoji.id]=emoji.glyph;
+   shapeCategories[emoji.id]=id;
+   noteShapes.push([emoji.id,emoji.name,true]);
+  }
+ }
+}
+export function categoryLabel(id,tr){
+ const entry=categoriesById.get(id);
+ return entry[3]?entry[2]:tr(entry[2]);
+}
 
 export function shipPageOrder(plan, count) {
   if (!plan) return Array.from({length:count}, (_, i) => i + 1);

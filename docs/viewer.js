@@ -1,9 +1,9 @@
 import * as pdfjs from './vendor/build/pdf.mjs';
-import {normalized,contrast,clamp,annotationStrokes,segmentDistance,pointInRing,touchSelection} from './model.js?v=655cb7f2c255';
+import {normalized,contrast,clamp,annotationStrokes,segmentDistance,pointInRing,touchSelection} from './model.js?v=e5323f5aad68';
 pdfjs.GlobalWorkerOptions.workerSrc=new URL('./vendor/build/pdf.worker.mjs',import.meta.url).href;
 const vendor=new URL('./vendor/',import.meta.url).href;
 export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendor+'cmaps/',cMapPacked:true,standardFontDataUrl:vendor+'standard_fonts/',wasmUrl:vendor+'wasm/',iccUrl:vendor+'iccs/',isEvalSupported:false}).promise;}
-import {emojiSymbols} from './ship-model.js?v=655cb7f2c255';
+import {emojiSymbols} from './ship-model.js?v=e5323f5aad68';
 const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
 const emojiSize=r=>r*1.8;
@@ -13,7 +13,7 @@ const badgeWidth=metrics=>Math.max(14,metrics.width+6);
 const rectangleDistance=(x,y,left,top,right,bottom)=>
  Math.hypot(Math.max(0,left-x,x-right),Math.max(0,top-y,y-bottom));
 import polygonClipping from './vendor/polygon-union.js';
-import {rectangularRegion} from './work-regions.js?v=655cb7f2c255';
+import {rectangularRegion} from './work-regions.js?v=e5323f5aad68';
 const regionCache=new WeakMap();
 function unionRegions(regions){
  if(!regions?.length)return [];
@@ -149,7 +149,7 @@ function markerY(annotation,rect){
  return rect.y+annotation.y*rect.h-clearance;
 }
 
-function drawLaser(ctx, rect, laser) {
+export function drawLaser(ctx, rect, laser) {
  if(!Number.isFinite(laser.x)||laser.x<0||laser.x>1)return;
  const x=rect.x+laser.x*rect.w;
  const y=rect.y+laser.y*rect.h;
@@ -220,25 +220,7 @@ export class Viewer{
  draw(render=true){const w=this.container.clientWidth,h=this.container.clientHeight;if(!w||!h)return;this.ratio=Math.min(devicePixelRatio||1,Math.sqrt(10000000/(w*h)));for(const c of [this.canvas,this.overlay]){if(c.width!==Math.round(w*this.ratio)||c.height!==Math.round(h*this.ratio)){c.width=Math.round(w*this.ratio);c.height=Math.round(h*this.ratio);}}
  const ctx=this.canvas.getContext('2d');ctx.setTransform(this.ratio,0,0,this.ratio,0,0);ctx.clearRect(0,0,w,h);const ov=this.overlay.getContext('2d');ov.setTransform(this.ratio,0,0,this.ratio,0,0);ov.clearRect(0,0,w,h);const r=this.rect();if(!r)return;ctx.fillStyle='white';ctx.fillRect(r.x,r.y,r.w,r.h);if(this.detail){const d=this.detail,k=r.scale/d.rect.scale;ctx.drawImage(d.canvas,(r.x-d.rect.x*k),(r.y-d.rect.y*k),d.w*k,d.h*k);}
  ov.save();ov.beginPath();ov.rect(r.x,r.y,r.w,r.h);ov.clip();
- const marks=this.marks.filter(a=>a.page===this.pageNumber&&!a.deleted);
- for(const a of marks){
-  if(a.id===this.areaDraft?.id)continue;
-  const muted=a.effectiveStatus&&a.effectiveStatus!=='started';
-  const color=muted?'#8793a1':a.color;
-  this.drawRegions(ov,r,a.regions,color,true,muted?.55:1);
-  for(const stroke of annotationStrokes(a)){
-   const {width,pixels}=highlightGeometry(a,r,stroke);
-   this.strokeLine(ov,pixels,color,width,a.opacity*(muted?.55:1));
-  }
- }
- for(const a of marks){
-  if(a.id===this.areaDraft?.id)continue;
-  const [x,y]=markPosition(a,r);
-  ov.save();
-  if(a.effectiveStatus&&a.effectiveStatus!=='started'){ov.filter='grayscale(1)';ov.globalAlpha=.52;}
-  marker(ov,x,y,a.color,a.shape,a.number);
-  ov.restore();
- }
+ this.drawMarks(ov,r,this.marks.filter(a=>a.page===this.pageNumber&&!a.deleted&&a.id!==this.areaDraft?.id));
  if(this.areaDraft){
   const {regions,vertices,color}=this.areaDraft;
   this.drawRegions(ov,r,regions,color);
@@ -263,6 +245,24 @@ export class Viewer{
  }
  ov.restore();
  if(render){this.revision++;clearTimeout(this.timer);this.timer=setTimeout(()=>this.renderDetail(),100);}}
+ drawMarks(ov,r,marks){
+ for(const a of marks){
+  const muted=a.effectiveStatus&&a.effectiveStatus!=='started';
+  const color=muted?'#8793a1':a.color;
+  this.drawRegions(ov,r,a.regions,color,true,muted?.55:1);
+  for(const stroke of annotationStrokes(a)){
+   const {width,pixels}=highlightGeometry(a,r,stroke);
+   this.strokeLine(ov,pixels,color,width,a.opacity*(muted?.55:1));
+  }
+ }
+ for(const a of marks){
+  const [x,y]=markPosition(a,r);
+  ov.save();
+  if(a.effectiveStatus&&a.effectiveStatus!=='started'){ov.filter='grayscale(1)';ov.globalAlpha=.52;}
+  marker(ov,x,y,a.color,a.shape,a.number);
+  ov.restore();
+ }
+ }
  drawRegions(ctx,rect,regions,color,merge=true,alpha=1){
   const polygons=merge?unionRegions(regions):regions.map(ring=>[ring]);
   if(!polygons.length)return;
