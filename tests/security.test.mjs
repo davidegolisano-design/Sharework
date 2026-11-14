@@ -211,6 +211,18 @@ test('Database permissions, approval, authorship, numbering and private files',a
  await as(pending);
  assert.equal((await db.query('select id from sw_work_emoji')).rows.length,0);
  await as(admin);
+ await db.exec('reset role');
+ await db.exec(await readFile('supabase/021_create_work_categories.sql','utf8'));
+ await as(admin);
+ const [category]=(await db.query("insert into sw_work_categories(name,glyph) values('Collaudo termico','🌡️') returning id")).rows;
+ assert.match(category.id,/^emoji_[0-9a-f]{32}$/);
+ assert.equal((await db.query('select shape from sw_annotations where id=$1',[first.id])).rows[0].shape,emoji.id);
+ await db.query("update sw_annotations set shape=$1 where id=$2",[category.id,first.id]);
+ await db.query("update sw_work_categories set name='Collaudo impianti' where id=$1",[category.id]);
+ assert.equal((await db.query('select shape from sw_annotations where id=$1',[first.id])).rows[0].shape,category.id);
+ await assert.rejects(db.query("insert into sw_work_categories(name,glyph) values('Duplicate','🌡')"),/sw_work_categories_glyph_idx/);
+ await assert.rejects(db.query("insert into sw_work_categories(name) values('Missing glyph')"),/sw_work_categories_custom_symbol/);
+ await assert.rejects(db.query("insert into sw_work_emoji(category_id,glyph,name) values('hot_work','🌋','Legacy path')"));
  const [removable]=(await db.query("insert into sw_projects(title) values('Removal test') returning id")).rows;
  await db.exec('reset role');
  await db.query("insert into auth.users values($1,'new-admin@example.test',now(),$2)",[a,JSON.stringify({full_name:'New Admin'})]);
@@ -221,6 +233,8 @@ test('Database permissions, approval, authorship, numbering and private files',a
  assert.equal((await db.query("select name from sw_work_categories where id='hot_work'")).rows[0].name,'Lavorazioni a caldo');
  assert.equal((await db.query("update sw_work_categories set name='Kept' where id='hot_work' returning id")).rows.length,0);
  await assert.rejects(db.query("insert into sw_work_emoji(category_id,glyph,name) values('hot_work','🌋','Denied')"));
+ assert.equal((await db.query('select name from sw_work_categories where id=$1',[category.id])).rows[0].name,'Collaudo impianti');
+ await assert.rejects(db.query("insert into sw_work_categories(name,glyph) values('Forbidden','🌋')"),/row-level security/);
  await assert.rejects(db.query("insert into sw_projects(title) values('Forbidden creation')"));
  await assert.rejects(db.query('select public.sw_remove_project($1)',[removable.id]));
  assert.equal((await db.query("update sw_projects set title='Updated by admin' where id=$1 returning id",[removable.id])).rows.length,1);

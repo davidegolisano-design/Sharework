@@ -37,15 +37,25 @@ export const noteShapes = [
 ];
 
 const builtInShapeCount=noteShapes.length;
+const builtInCategoryCount=workCategories.length;
 export function setWorkCatalog(rows){
  for(const [id] of noteShapes.splice(builtInShapeCount)){
   delete emojiSymbols[id];
   delete shapeCategories[id];
  }
+ for(const [id] of workCategories.splice(builtInCategoryCount))categoriesById.delete(id);
+ for(const {id,glyph,name} of rows){
+  if(glyph)workCategories.push([id,glyph,name]);
+ }
  const byId=new Map(rows.map(row=>[row.id,row]));
  for(const [id,icon,defaultLabel] of workCategories){
   const row=byId.get(id);
   categoriesById.set(id,[id,icon,row?.name||defaultLabel,Boolean(row?.name)]);
+  if(row?.glyph){
+   emojiSymbols[id]=icon;
+   shapeCategories[id]=id;
+   noteShapes.push([id,row.name,true]);
+  }
   for(const emoji of row?.sw_work_emoji||[]){
    emojiSymbols[emoji.id]=emoji.glyph;
    shapeCategories[emoji.id]=id;

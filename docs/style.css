@@ -256,8 +256,6 @@ dialog textarea{min-height:85px}
 .catalog-row input{min-height:42px;padding:8px 10px}
 .catalog-status{margin:8px 0;font-size:13px}
 .catalog-status:empty,.print-options+p:empty{display:none}
-.catalog-emoji-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
-.catalog-emoji-list span{background:#edf1fa;border-radius:8px;padding:5px 9px;font-size:13px}
 .print-options{display:grid;gap:8px}
 .print-options button{white-space:normal}
 .print-options+p{margin:10px 0 0}
