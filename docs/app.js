@@ -1,13 +1,13 @@
-import {workStates,workState,localDateTime} from './work-schedule.js?v=f96817ccc7d6';
-import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=f96817ccc7d6';
-import {projectCover} from './cards.js?v=f96817ccc7d6';
-import {watchChanges} from './realtime.js?v=f96817ccc7d6';
-import * as api from './api.js?v=f96817ccc7d6';
-import {Viewer,loadPdf,marker,drawLaser} from './viewer.js?v=f96817ccc7d6';
-import {snapshot,grouped,clamp,annotationStrokes,normalizeSearch,searchRanges} from './model.js?v=f96817ccc7d6';
-import {filterNotes,noteShapes,noteCategory,geometricSymbols,workCategories,setWorkCatalog,categoryLabel,isArchivedSymbol,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js?v=f96817ccc7d6';
-import {finishRegion,legacyRegions} from './work-regions.js?v=f96817ccc7d6';
-import {editShipPlan} from './ship-editor.js?v=f96817ccc7d6';
+import {workStates,workState,localDateTime} from './work-schedule.js?v=d910adbc61f2';
+import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=d910adbc61f2';
+import {projectCover} from './cards.js?v=d910adbc61f2';
+import {watchChanges} from './realtime.js?v=d910adbc61f2';
+import * as api from './api.js?v=d910adbc61f2';
+import {Viewer,loadPdf,marker,drawLaser} from './viewer.js?v=d910adbc61f2';
+import {snapshot,grouped,clamp,annotationStrokes,normalizeSearch,searchRanges} from './model.js?v=d910adbc61f2';
+import {filterNotes,noteShapes,noteCategory,geometricSymbols,workCategories,setWorkCatalog,categoryLabel,categoryNames,symbolLabel,isArchivedSymbol,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js?v=d910adbc61f2';
+import {finishRegion,legacyRegions} from './work-regions.js?v=d910adbc61f2';
+import {editShipPlan} from './ship-editor.js?v=d910adbc61f2';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
 let stopRealtime=null,refreshTimer,realtimeConnected=false,lastSafetyCheck=0,annotationRevision=0;
 const pendingSync=new Set();
@@ -27,11 +27,11 @@ const pageName = n => plan()?.overview.page===n ? 'General Overview' : plan()?.d
 const phoneLayout=matchMedia('(max-width:960px), (orientation:landscape) and (max-height:550px)');
 const filterIds = ['notes-query','notes-page','notes-kind','notes-author','notes-day','notes-work-status','notes-category'];
 const stateLabels=new Map(workStates);
-const categoryText=category=>category.icon+' '+(category.custom?category.label:categoryLabel(category.key,tr));
+const categoryText=category=>category.icon+' '+(category.custom?category.label:categoryLabel(category.key,tr,locale()));
 let catalogRevision=0;
 async function refreshWorkCatalog(){
  const revision=++catalogRevision,account=user?.id;
- const rows=await api.table('sw_work_categories','select=id,name,glyph,archived,sw_work_emoji(id,glyph,name)&order=name.asc,id.asc&sw_work_emoji.order=name.asc');
+ const rows=await api.table('sw_work_categories','select=id,name,name_en,glyph,archived,sw_work_emoji(id,glyph,name)&order=name.asc,id.asc&sw_work_emoji.order=name.asc');
  if(revision===catalogRevision&&account===user?.id){
   setWorkCatalog(rows);
   if(isArchivedSymbol(viewer.settings.note.shape))viewer.settings.note.shape='circle';
@@ -608,7 +608,7 @@ $('print-view').onclick=()=>{
    for(const item of choices.querySelectorAll('button'))item.disabled=true;
    message.textContent=tr('Preparazione PDF…');
    try{
-    const {printPlan}=await import('./plan-print.js?v=f96817ccc7d6');
+    const {printPlan}=await import('./plan-print.js?v=d910adbc61f2');
     const base=printPage.getViewport({scale:1});
     const scale=1200/Math.max(base.width,base.height);
     const full={x:0,y:0,w:base.width*scale,h:base.height*scale,scale};
@@ -639,7 +639,7 @@ $('export-works').onclick=async()=>{
  const name=page=>configuration?.decks.find(deck=>deck.page===page)?.name||tr('Pagina')+' '+page;
  button.disabled=true;
  try{
-  const {exportWorks}=await import('./work-export.js?v=f96817ccc7d6');
+  const {exportWorks}=await import('./work-export.js?v=d910adbc61f2');
   if(canExportWorks()&&!$('workspace').hidden)await exportWorks(works,configuration,title,name,tr,locale());
  }catch(error){report(error);}
  finally{button.disabled=false;}
@@ -727,11 +727,11 @@ function refreshList(){
  const liveNotes=annotations.filter(note=>!note.deleted);
  const usedShapes=new Set(liveNotes.map(note=>note.shape));
  const selectableShapes=noteShapes.filter(([id])=>!isArchivedSymbol(id)||usedShapes.has(id));
- selectOptions($('notes-kind'),[['',tr('Tutti')],...selectableShapes.map(([key,label,custom])=>[key,(emojiSymbols[key]||geometricSymbols[key])+' '+(custom?label:tr(label))]),['highlight',tr('Evidenziazione')]]);
+ selectOptions($('notes-kind'),[['',tr('Tutti')],...selectableShapes.map(entry=>{const [key]=entry;return [key,(emojiSymbols[key]||geometricSymbols[key])+' '+symbolLabel(entry,tr,locale())];}),['highlight',tr('Evidenziazione')]]);
  const authors=new Map(liveNotes.map(a=>[a.created_by,a.author_name]));
  selectOptions($('notes-author'),[['',tr('Tutti')],...[...authors].sort((a,b)=>a[1].localeCompare(b[1],locale()))]);
  selectOptions($('notes-work-status'),[['',tr('Tutti')],...workStates.map(([key,label])=>[key,tr(label)])]);
- const categories=new Map(workCategories.map(([id,icon])=>[id,icon+' '+categoryLabel(id,tr)]));
+ const categories=new Map(workCategories.map(([id,icon])=>[id,icon+' '+categoryLabel(id,tr,locale())]));
  for(const note of liveNotes){
   const category=noteCategory(note);
   if(category&&!categories.has(category.key))categories.set(category.key,categoryText(category));
@@ -1193,9 +1193,10 @@ async function toolSettings(existing=null){
  }
 
  color.oninput=()=>{choice.color=color.value;preview();};
- for(const [shape,label,custom] of noteShapes){
+ for(const entry of noteShapes){
+  const [shape]=entry;
   if(isArchivedSymbol(shape)&&shape!==existing?.shape)continue;
-  const displayLabel=custom?label:tr(label);
+  const displayLabel=symbolLabel(entry,tr,locale());
   const button=btn('',()=>{choice.shape=shape;updateSymbol();},'symbol-choice');
   button.dataset.symbol=shape;
   button.title=displayLabel;
@@ -1318,36 +1319,47 @@ async function manageWorkCatalog(){
   if(noteShapes.some(([shape])=>!isArchivedSymbol(shape)&&emojiSymbols[shape]?.replaceAll('\ufe0f','')===identity))throw Error(tr('Questa emoji è già disponibile.'));
   return value;
  }
+ function nameFields(container,values=['','']){
+  return ['ITA','ENG'].map((label,index)=>{
+   const input=field(container,label,{value:values[index]});
+   input.maxLength=60;
+   return input;
+  });
+ }
  function renderCategories(){
   names.replaceChildren();
   for(const [id,icon] of workCategories){
    const row=text('div','','catalog-row');
    const fields=text('div','','catalog-fields');
    const actions=text('div','','catalog-actions');
-   const name=field(fields,icon+' '+tr('Nome categoria'),{value:categoryLabel(id,tr)});
+   const [italian,english]=categoryNames(id,tr);
+   const [name,nameEn]=nameFields(fields,[italian,english]);
    let symbol;
    if(!geometricSymbols[id]){
     symbol=field(fields,tr('Emoji della categoria'),{value:icon});
     symbol.maxLength=48;
+   }else{
+    fields.append(text('span',icon,'catalog-standard-symbol'));
    }
-   name.maxLength=60;
    const button=btn(tr('Salva'),()=>save(button,async()=>{
     const value=name.value.trim();
     if(!value)throw Error(tr('Inserisci un nome.'));
     const changes={};
-    if(value!==categoryLabel(id,tr))changes.name=value;
+    const translation=nameEn.value.trim();
+    if(value!==italian)changes.name=value;
+    if(translation!==english)changes.name_en=translation||null;
     if(symbol&&symbol.value.trim()!==icon)changes.glyph=readEmoji(symbol,icon);
     if(!Object.keys(changes).length)return;
     const rows=await api.table('sw_work_categories','id=eq.'+id+'&archived=eq.false',{method:'PATCH',body:changes});
     if(!rows.length)throw Error(tr('Operazione non riuscita'));
    },renderCategories));
-   for(const input of [name,symbol].filter(Boolean)){
+   for(const input of [name,nameEn,symbol].filter(Boolean)){
     input.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();button.click();}};
    }
    actions.append(button);
    if(symbol){
     const remove=btn(tr('Elimina'),()=>save(remove,async()=>{
-     if(!confirm(categoryLabel(id,tr)+'\n'+tr('Eliminare questa categoria? I lavori già salvati manterranno il simbolo e la categoria.')))return false;
+     if(!confirm(categoryLabel(id,tr,locale())+'\n'+tr('Eliminare questa categoria? I lavori già salvati manterranno il simbolo e la categoria.')))return false;
      const rows=await api.table('sw_work_categories','id=eq.'+id+'&archived=eq.false',{method:'PATCH',body:{archived:true}});
      if(!rows.length)throw Error(tr('Operazione non riuscita'));
     },renderCategories),'danger');
@@ -1356,17 +1368,18 @@ async function manageWorkCatalog(){
    row.append(fields,actions);names.append(row);
   }
  }
- const name=field(create,tr('Nome categoria'));
- name.maxLength=60;
+ const translations=text('div','','catalog-translations');
+ const [name,nameEn]=nameFields(translations);
+ create.append(translations);
  const glyph=field(create,tr('Emoji della categoria'));
  glyph.maxLength=48;
  const add=btn(tr('Crea categoria'),()=>save(add,async()=>{
-  const label=name.value.trim();
-  if(!label)throw Error(tr('Inserisci un nome.'));
+  const label=name.value.trim(),translation=nameEn.value.trim();
+  if(!label||!translation)throw Error(tr('Inserisci il nome in italiano e in inglese.'));
   const value=readEmoji(glyph);
-  await api.table('sw_work_categories','',{method:'POST',body:{glyph:value,name:label}});
+  await api.table('sw_work_categories','',{method:'POST',body:{glyph:value,name:label,name_en:translation}});
  },()=>{
-  glyph.value='';name.value='';
+  glyph.value='';name.value='';nameEn.value='';
   renderCategories();selectTab(false);
  }),'primary');
  create.append(add);
