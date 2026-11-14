@@ -116,3 +116,30 @@ test('An emoji glyph edge hit and a filled area open the same chooser on every i
  ]});
  assert.deepEqual(Array.from(v.hit(523,216),n=>n.id).sort(),[1,2]);
 });
+
+test('Overlaid flames remain separately selectable when emoji ink metrics are too small',()=>{
+ const v=Object.create(Viewer.prototype);
+ Object.assign(v,{
+  pageNumber:1,zoom:1,panX:0,
+  rect(){return {x:this.panX,y:0,w:1000*this.zoom,h:500*this.zoom,scale:this.zoom};},
+  overlay:{getContext:()=>({save(){},restore(){},measureText:()=>({
+   width:17,actualBoundingBoxLeft:4,actualBoundingBoxRight:4,
+   actualBoundingBoxAscent:4,actualBoundingBoxDescent:4
+  })})},
+  marks:[
+   {id:11,page:1,kind:'note',shape:'flame',number:11,x:.5,y:.5,projected:true},
+   {id:12,page:1,kind:'note',shape:'flame',number:12,x:.503,y:.477,projected:true},
+   {id:8,page:1,kind:'note',shape:'flame',number:8,x:.455,y:.52,projected:true}
+  ]
+ });
+ const hit=()=>{
+  const rect=v.rect();
+  return Array.from(v.hit(rect.x+.503*rect.w+18,.477*rect.h-23-11.5),n=>n.id).sort((a,b)=>a-b);
+ };
+ assert.deepEqual(hit(),[11,12]);
+ v.zoom=4;
+ assert.deepEqual(hit(),[12]);
+ v.zoom=1;
+ v.panX=-130;
+ assert.deepEqual(hit(),[11,12]);
+});
