@@ -1,26 +1,27 @@
 import {workState} from './work-schedule.js';
 import {annotationStrokes,normalizeSearch} from './model.js';
-export const workCategories=[
+export const geometricSymbols={circle:'●',square:'■',diamond:'◆',triangle:'▲'};
+const defaultCategories=[
+ ['circle','●','Punto'],['square','■','Quadrato'],['diamond','◆','Rombo'],['triangle','▲','Triangolo'],
  ['scaffolding','🪜','Ponteggio'],['hot_work','🔥','Lavoro a caldo'],['lifting','🏗️','Sollevamento'],
  ['mechanical','⚙️','Meccanica'],['pipework','🚰','Tubisteria'],['electrical','⚡','Elettrico'],
  ['cleaning','🧹','Pulizia'],['testing','🧪','Prove'],['painting','🖌️','Pittura'],
  ['inspection','🔍','Ispezione'],['safety','⛑️','Sicurezza']
 ];
-const categoriesById=new Map(workCategories.map(entry=>[entry[0],entry]));
+export const workCategories=[...defaultCategories];
+const categoriesById=new Map(defaultCategories.map(entry=>[entry[0],entry]));
 const shapeCategories={
  scaffolding:'scaffolding',flame:'hot_work',welding:'hot_work',lifting:'lifting',
  mechanical:'mechanical',tool:'mechanical',drilling:'mechanical',pipes:'pipework',electric:'electrical',
  cleaning:'cleaning',testing:'testing',painting:'painting',inspection:'inspection',measurement:'inspection',
  ppe:'safety',fire_watch:'safety',warning:'safety'
 };
-export const geometricSymbols={circle:'●',square:'■',diamond:'◆',triangle:'▲'};
-
 export function noteCategory(note){
- const category=categoriesById.get(shapeCategories[note.shape]);
- if(category)return {key:category[0],icon:category[1],label:category[2],renamed:category[3]};
  const icon=geometricSymbols[note.shape];
  const label=note.custom_category?.trim();
- return icon&&label?{key:'custom:'+normalizeSearch(label),icon,label,custom:true}:null;
+ if(icon&&label)return {key:'custom:'+normalizeSearch(label),icon,label,custom:true};
+ const category=categoriesById.get(icon?note.shape:shapeCategories[note.shape]);
+ return category?{key:category[0],icon:category[1],label:category[2],renamed:category[3]}:null;
 }
 
 const workSymbols = [
@@ -36,32 +37,55 @@ export const noteShapes = [
   ...workSymbols.map(([key,,label])=>[key,label])
 ];
 
-const builtInShapeCount=noteShapes.length;
-const builtInCategoryCount=workCategories.length;
+const defaultShapes=noteShapes.slice();
+const primarySymbols=new Map(defaultCategories.flatMap(([id,icon])=>{
+ const symbol=workSymbols.find(([shape,glyph])=>shapeCategories[shape]===id&&glyph===icon);
+ return symbol?[[id,symbol[0]]]:[];
+}));
+const archivedCategories=new Set();
+export function isArchivedSymbol(shape){
+ return archivedCategories.has(shapeCategories[shape]);
+}
 export function setWorkCatalog(rows){
- for(const [id] of noteShapes.splice(builtInShapeCount)){
+ for(const [id] of noteShapes.slice(defaultShapes.length)){
   delete emojiSymbols[id];
   delete shapeCategories[id];
  }
- for(const [id] of workCategories.splice(builtInCategoryCount))categoriesById.delete(id);
- for(const {id,glyph,name} of rows){
-  if(glyph)workCategories.push([id,glyph,name]);
- }
+ for(const [shape,glyph] of workSymbols)emojiSymbols[shape]=glyph;
+ categoriesById.clear();
+ archivedCategories.clear();
  const byId=new Map(rows.map(row=>[row.id,row]));
- for(const [id,icon,defaultLabel] of workCategories){
-  const row=byId.get(id);
-  categoriesById.set(id,[id,icon,row?.name||defaultLabel,Boolean(row?.name)]);
-  if(row?.glyph){
+ const entries=[
+  ...defaultCategories,
+  ...rows.filter(row=>row.glyph&&row.id.startsWith('emoji_')).map(({id,glyph,name})=>[id,glyph,name])
+ ];
+ const active=[],extra=[];
+ for(const [id,defaultIcon,defaultLabel] of entries){
+  const row=byId.get(id),icon=row?.glyph||defaultIcon,label=row?.name||defaultLabel;
+  categoriesById.set(id,[id,icon,label,Boolean(row?.name)]);
+  if(row?.archived)archivedCategories.add(id);
+  else active.push([id,icon,label]);
+  const primary=primarySymbols.get(id);
+  if(primary)emojiSymbols[primary]=icon;
+  if(id.startsWith('emoji_')){
    emojiSymbols[id]=icon;
    shapeCategories[id]=id;
-   noteShapes.push([id,row.name,true]);
+   extra.push([id,label,true]);
   }
   for(const emoji of row?.sw_work_emoji||[]){
    emojiSymbols[emoji.id]=emoji.glyph;
    shapeCategories[emoji.id]=id;
-   noteShapes.push([emoji.id,emoji.name,true]);
+   extra.push([emoji.id,emoji.name,true]);
   }
  }
+ workCategories.splice(0,workCategories.length,...active);
+ const builtIn=defaultShapes.map(entry=>{
+  const [shape]=entry;
+  const id=geometricSymbols[shape]?shape:shapeCategories[shape];
+  const name=byId.get(id)?.name;
+  return name&&(shape===id||shape===primarySymbols.get(id))?[shape,name,true]:entry;
+ });
+ noteShapes.splice(0,noteShapes.length,...builtIn,...extra);
 }
 export function categoryLabel(id,tr){
  const entry=categoriesById.get(id);

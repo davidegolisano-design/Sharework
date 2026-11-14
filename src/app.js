@@ -5,7 +5,7 @@ import {watchChanges} from './realtime.js';
 import * as api from './api.js';
 import {Viewer,loadPdf,marker,drawLaser} from './viewer.js';
 import {snapshot,grouped,clamp,annotationStrokes,normalizeSearch,searchRanges} from './model.js';
-import {filterNotes,noteShapes,noteCategory,geometricSymbols,workCategories,setWorkCatalog,categoryLabel,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js';
+import {filterNotes,noteShapes,noteCategory,geometricSymbols,workCategories,setWorkCatalog,categoryLabel,isArchivedSymbol,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js';
 import {finishRegion,legacyRegions} from './work-regions.js';
 import {editShipPlan} from './ship-editor.js';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
@@ -31,8 +31,11 @@ const categoryText=category=>category.icon+' '+(category.custom?category.label:c
 let catalogRevision=0;
 async function refreshWorkCatalog(){
  const revision=++catalogRevision,account=user?.id;
- const rows=await api.table('sw_work_categories','select=id,name,glyph,sw_work_emoji(id,glyph,name)&order=name.asc,id.asc&sw_work_emoji.order=name.asc');
- if(revision===catalogRevision&&account===user?.id)setWorkCatalog(rows);
+ const rows=await api.table('sw_work_categories','select=id,name,glyph,archived,sw_work_emoji(id,glyph,name)&order=name.asc,id.asc&sw_work_emoji.order=name.asc');
+ if(revision===catalogRevision&&account===user?.id){
+  setWorkCatalog(rows);
+  if(isArchivedSymbol(viewer.settings.note.shape))viewer.settings.note.shape='circle';
+ }
 }
 let scheduleTimer;
 let finishPick = null;
@@ -720,13 +723,19 @@ function refreshList(){
  const overview=isOverview();
  const order=shipPageOrder(plan(),pdf.numPages);
  selectOptions($('notes-page'),[['',tr('Tutte')],...order.map(n=>[n,pageName(n)])]);
- selectOptions($('notes-kind'),[['',tr('Tutti')],...noteShapes.map(([key,label,custom])=>[key,(emojiSymbols[key]||geometricSymbols[key])+' '+(custom?label:tr(label))]),['highlight',tr('Evidenziazione')]]);
- const authors=new Map(annotations.filter(a=>!a.deleted).map(a=>[a.created_by,a.author_name]));
+ const liveNotes=annotations.filter(note=>!note.deleted);
+ const usedShapes=new Set(liveNotes.map(note=>note.shape));
+ const selectableShapes=noteShapes.filter(([id])=>!isArchivedSymbol(id)||usedShapes.has(id));
+ selectOptions($('notes-kind'),[['',tr('Tutti')],...selectableShapes.map(([key,label,custom])=>[key,(emojiSymbols[key]||geometricSymbols[key])+' '+(custom?label:tr(label))]),['highlight',tr('Evidenziazione')]]);
+ const authors=new Map(liveNotes.map(a=>[a.created_by,a.author_name]));
  selectOptions($('notes-author'),[['',tr('Tutti')],...[...authors].sort((a,b)=>a[1].localeCompare(b[1],locale()))]);
  selectOptions($('notes-work-status'),[['',tr('Tutti')],...workStates.map(([key,label])=>[key,tr(label)])]);
- const custom=new Map(annotations.filter(note=>!note.deleted).map(noteCategory).filter(category=>category?.custom)
-  .map(category=>[category.key,category.icon+' '+category.label]));
- selectOptions($('notes-category'),[['',tr('Tutti')],...workCategories.map(([key,icon])=>[key,icon+' '+categoryLabel(key,tr)]),...custom]);
+ const categories=new Map(workCategories.map(([id,icon])=>[id,icon+' '+categoryLabel(id,tr)]));
+ for(const note of liveNotes){
+  const category=noteCategory(note);
+  if(category&&!categories.has(category.key))categories.set(category.key,categoryText(category));
+ }
+ selectOptions($('notes-category'),[['',tr('Tutti')],...categories]);
  const [query,pageFilter,kind,author,day,statusFilter,categoryFilter]=filterIds.map(id=>$(id).value);
  const search=normalizeSearch(query).trim();
  const now=Date.now();
@@ -1183,6 +1192,7 @@ async function toolSettings(existing=null){
  customCategory.oninput=updateSymbol;
  color.oninput=()=>{choice.color=color.value;preview();};
  for(const [shape,label,custom] of noteShapes){
+  if(isArchivedSymbol(shape)&&shape!==existing?.shape)continue;
   const displayLabel=custom?label:tr(label);
   const button=btn('',()=>{choice.shape=shape;updateSymbol();},'symbol-choice');
   button.dataset.symbol=shape;
@@ -1284,7 +1294,7 @@ async function manageWorkCatalog(){
   if(!canConfigure()||button.disabled)return;
   button.disabled=true;
   try{
-   await operation();
+   if(await operation()===false)return;
    await refreshWorkCatalog();
    if(box.contains(button)){
     onSave();
@@ -1293,21 +1303,51 @@ async function manageWorkCatalog(){
   }catch(error){feedback.textContent=tr(error.message);}
   finally{button.disabled=false;}
  }
+ function readEmoji(input,currentIcon){
+  const value=input.value.trim();
+  if(value===currentIcon)return value;
+  const pictograph=/\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20e3/u;
+  if(!pictograph.test(value)||[...value].length>24||[...new Intl.Segmenter().segment(value)].length!==1)throw Error(tr('Inserisci una sola emoji.'));
+  const identity=value.replaceAll('\ufe0f','');
+  if(noteShapes.some(([shape])=>!isArchivedSymbol(shape)&&emojiSymbols[shape]?.replaceAll('\ufe0f','')===identity))throw Error(tr('Questa emoji è già disponibile.'));
+  return value;
+ }
  function renderCategories(){
   names.replaceChildren();
   for(const [id,icon] of workCategories){
    const row=text('div','','catalog-row');
-   const name=field(row,icon+' '+tr('Nome categoria'),{value:categoryLabel(id,tr)});
+   const fields=text('div','','catalog-fields');
+   const actions=text('div','','catalog-actions');
+   const name=field(fields,icon+' '+tr('Nome categoria'),{value:categoryLabel(id,tr)});
+   let symbol;
+   if(!geometricSymbols[id]){
+    symbol=field(fields,tr('Emoji della categoria'),{value:icon});
+    symbol.maxLength=48;
+   }
    name.maxLength=60;
    const button=btn(tr('Salva'),()=>save(button,async()=>{
     const value=name.value.trim();
     if(!value)throw Error(tr('Inserisci un nome.'));
-    if(value===categoryLabel(id,tr))return;
-    const rows=await api.table('sw_work_categories','id=eq.'+id,{method:'PATCH',body:{name:value}});
+    const changes={};
+    if(value!==categoryLabel(id,tr))changes.name=value;
+    if(symbol&&symbol.value.trim()!==icon)changes.glyph=readEmoji(symbol,icon);
+    if(!Object.keys(changes).length)return;
+    const rows=await api.table('sw_work_categories','id=eq.'+id+'&archived=eq.false',{method:'PATCH',body:changes});
     if(!rows.length)throw Error(tr('Operazione non riuscita'));
-   },()=>{name.value=categoryLabel(id,tr);}));
-   name.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();button.click();}};
-   row.append(button);names.append(row);
+   },renderCategories));
+   for(const input of [name,symbol].filter(Boolean)){
+    input.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();button.click();}};
+   }
+   actions.append(button);
+   if(symbol){
+    const remove=btn(tr('Elimina'),()=>save(remove,async()=>{
+     if(!confirm(categoryLabel(id,tr)+'\n'+tr('Eliminare questa categoria? I lavori già salvati manterranno il simbolo e la categoria.')))return false;
+     const rows=await api.table('sw_work_categories','id=eq.'+id+'&archived=eq.false',{method:'PATCH',body:{archived:true}});
+     if(!rows.length)throw Error(tr('Operazione non riuscita'));
+    },renderCategories),'danger');
+    actions.append(remove);
+   }
+   row.append(fields,actions);names.append(row);
   }
  }
  const name=field(create,tr('Nome categoria'));
@@ -1315,12 +1355,9 @@ async function manageWorkCatalog(){
  const glyph=field(create,tr('Emoji della categoria'));
  glyph.maxLength=48;
  const add=btn(tr('Crea categoria'),()=>save(add,async()=>{
-  const value=glyph.value.trim(), label=name.value.trim();
-  const pictograph=/\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20e3/u;
+  const label=name.value.trim();
   if(!label)throw Error(tr('Inserisci un nome.'));
-  if(!pictograph.test(value)||[...value].length>24||[...new Intl.Segmenter().segment(value)].length!==1)throw Error(tr('Inserisci una sola emoji.'));
-  const identity=value.replaceAll('\ufe0f','');
-  if(Object.values(emojiSymbols).some(symbol=>symbol.replaceAll('\ufe0f','')===identity))throw Error(tr('Questa emoji è già disponibile.'));
+  const value=readEmoji(glyph);
   await api.table('sw_work_categories','',{method:'POST',body:{glyph:value,name:label}});
  },()=>{
   glyph.value='';name.value='';

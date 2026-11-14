@@ -260,3 +260,12 @@ dialog textarea{min-height:85px}
 .print-options button{white-space:normal}
 .print-options+p{margin:10px 0 0}
 @media(max-width:540px){.project-header{gap:8px;padding-inline:12px}.header-actions{flex-wrap:wrap;justify-content:flex-end}.header-actions button{white-space:normal}}
+
+.catalog-row{padding:9px 0;border-bottom:1px solid #edf1f3}
+.catalog-fields{display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:8px}
+.catalog-fields label:only-child{grid-column:1/-1}
+.catalog-actions{display:flex;gap:5px}
+@media(max-width:470px){
+ .catalog-row{grid-template-columns:minmax(0,1fr)}
+ .catalog-actions{justify-content:flex-end}
+}

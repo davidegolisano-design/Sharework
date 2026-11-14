@@ -1,9 +1,9 @@
 import * as pdfjs from './vendor/build/pdf.mjs';
-import {normalized,contrast,clamp,annotationStrokes,segmentDistance,pointInRing,touchSelection} from './model.js?v=665fdd14474d';
+import {normalized,contrast,clamp,annotationStrokes,segmentDistance,pointInRing,touchSelection} from './model.js?v=2a96e4f38bd2';
 pdfjs.GlobalWorkerOptions.workerSrc=new URL('./vendor/build/pdf.worker.mjs',import.meta.url).href;
 const vendor=new URL('./vendor/',import.meta.url).href;
 export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendor+'cmaps/',cMapPacked:true,standardFontDataUrl:vendor+'standard_fonts/',wasmUrl:vendor+'wasm/',iccUrl:vendor+'iccs/',isEvalSupported:false}).promise;}
-import {emojiSymbols} from './ship-model.js?v=665fdd14474d';
+import {emojiSymbols} from './ship-model.js?v=2a96e4f38bd2';
 const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
 const emojiSize=r=>r*1.8;
@@ -13,7 +13,7 @@ const badgeWidth=metrics=>Math.max(14,metrics.width+6);
 const rectangleDistance=(x,y,left,top,right,bottom)=>
  Math.hypot(Math.max(0,left-x,x-right),Math.max(0,top-y,y-bottom));
 import polygonClipping from './vendor/polygon-union.js';
-import {rectangularRegion} from './work-regions.js?v=665fdd14474d';
+import {rectangularRegion} from './work-regions.js?v=2a96e4f38bd2';
 const regionCache=new WeakMap();
 function unionRegions(regions){
  if(!regions?.length)return [];
