@@ -193,6 +193,8 @@ const english = {
  "Vai al punto": "Go to location",
  "Impostazioni aspetto": "Appearance settings",
  "Elimina": "Delete",
+ "Annulla eliminazione":"Cancel",
+ "Conferma eliminazione":"Confirm deletion",
  "Eliminare questa annotazione?": "Delete this annotation?",
  "Colore": "Color",
  "Spessore": "Width",

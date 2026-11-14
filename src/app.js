@@ -28,7 +28,7 @@ let finishPick = null;
 let areaSession = null;
 let lastDeckView = null;
 let laser = null;
-const viewer=new Viewer($('viewport'),$('pdf-canvas'),$('marks-canvas'),{create:a=>makeAnnotation(a).catch(report),edit:items=>openMarkers(items).catch(report),error:report,laser:setLaserPoint,stroke:addAreaStroke,vertex:addAreaVertex});
+const viewer=new Viewer($('viewport'),$('pdf-canvas'),$('marks-canvas'),{create:a=>makeAnnotation(a).catch(report),edit:(items,event)=>openMarkers(items,event).catch(report),error:report,laser:setLaserPoint,stroke:addAreaStroke,vertex:addAreaVertex});
 const setupViewer=new Viewer($('setup-viewport'),$('setup-pdf'),$('setup-marks'),{error:report});
 let setupPdf,closeSetup,setupLoading=false;
 $('setup-fit').onclick=()=>setupViewer.fit();
@@ -80,9 +80,47 @@ function screen(name){screens.forEach(id=>$(id).hidden=id!==name);}
 function status(value){$('sync-state').textContent=value;}
 function date(value){return new Date(value).toLocaleString(locale(),{dateStyle:'short',timeStyle:'short'});}
 function mode(value){if(value&&laser){laser=null;refreshLaser();}if(phoneLayout.matches)$('mobile-tools').open=false;viewer.mode=canPlace()&&!finishPick&&viewer.mode!==value?value:null;$('note-tool').classList.toggle('active',viewer.mode==='note');}
-function modal(title,onClose=null){if($('dialog').open)throw Error(tr('Chiudi prima la finestra aperta.'));dialogOpen=true;dialogClose=onClose;$('dialog-title').textContent=title;$('dialog-body').replaceChildren();$('dialog-body').classList.remove('annotation-choices');$('dialog-footer').replaceChildren();$('dialog').showModal();return $('dialog-body');}
-async function closeModal(){if(dialogClose&&await dialogClose()===false)return;dialogClose=null;dialogOpen=false;$('dialog').close();scheduleRefresh();}
-$('dialog-close').onclick=()=>closeModal().catch(report);$('dialog').addEventListener('cancel',e=>{e.preventDefault();closeModal().catch(report);});$('dialog-form').onsubmit=e=>e.preventDefault();
+const appDialog=$('dialog');
+let dialogPress=null, planActivation=null, openingMarker=false;
+function modal(title,onClose=null){
+ if(appDialog.open)throw Error(tr('Chiudi prima la finestra aperta.'));
+ dialogPress=null;
+ dialogOpen=true;dialogClose=onClose;
+ $('dialog-title').textContent=title;
+ $('dialog-body').replaceChildren();
+ $('dialog-body').classList.remove('annotation-choices');
+ $('dialog-footer').replaceChildren();
+ appDialog.showModal();
+ return $('dialog-body');
+}
+async function closeModal(){
+ if(dialogClose&&await dialogClose()===false)return;
+ dialogClose=null;dialogOpen=false;dialogPress=null;
+ appDialog.close();scheduleRefresh();
+}
+
+// A compatibility click from the plan can be delivered after pointerup has
+// opened the dialog. Only a new press inside it may activate a pointer control.
+appDialog.addEventListener('pointerdown',event=>{
+ dialogPress={button:event.target.closest('button'),id:event.pointerId};
+},true);
+appDialog.addEventListener('pointercancel',()=>{dialogPress=null;},true);
+appDialog.addEventListener('click',event=>{
+ const button=event.target.closest('button');
+ const fromPointer=event.detail>0||Boolean(event.pointerType);
+ const insideFreshPress=button===dialogPress?.button
+  &&(!event.pointerType||event.pointerId===dialogPress.id);
+ dialogPress=null;
+ if(!button||!fromPointer)return;
+ const repeatedPlanTap=planActivation&&performance.now()-planActivation.time<360
+  &&Math.hypot(event.clientX-planActivation.x,event.clientY-planActivation.y)<24;
+ if(insideFreshPress&&!repeatedPlanTap)return;
+ event.preventDefault();
+ event.stopImmediatePropagation();
+},true);
+$('dialog-close').onclick=()=>closeModal().catch(report);
+appDialog.addEventListener('cancel',e=>{e.preventDefault();closeModal().catch(report);});
+$('dialog-form').onsubmit=e=>e.preventDefault();
 function field(parent,title,{value='',type='text',multiline=false,min,max,step}={}){const label=text('label',title),input=document.createElement(multiline?'textarea':'input');if(!multiline)input.type=type;input.value=value;if(min!==undefined)input.min=min;if(max!==undefined)input.max=max;if(step!==undefined)input.step=step;label.append(input);parent.append(label);return input;}
 function setAuthMode(value){authMode=value;$('name-field').hidden=value!=='signup';$('full-name').required=value==='signup';$('signup-hint').hidden=value!=='signup';$('password').autocomplete=value==='signup'?'new-password':'current-password';$('auth-title').textContent=tr(value==='signup'?'Crea il tuo account':'Accedi al tuo spazio');$('auth-submit').textContent=tr(value==='signup'?'Registrati →':'Accedi →');$('login-tab').classList.toggle('selected',value==='login');$('signup-tab').classList.toggle('selected',value==='signup');$('auth-error').textContent='';}
 $('login-tab').onclick=()=>setAuthMode('login');$('signup-tab').onclick=()=>setAuthMode('signup');
@@ -654,18 +692,25 @@ function annotationHeading(annotation){
  return annotation.number==null?type:type+' '+annotation.number;
 }
 
-async function openMarkers(hits){
- if(dialogOpen||finishPick||loading||areaSession)return;
+async function openMarkers(hits,event){
+ if(dialogOpen||finishPick||loading||areaSession||openingMarker)return;
  const byId=new Map(annotations.filter(item=>!item.deleted).map(item=>[item.id,item]));
  const items=[...new Set(hits.map(item=>item.id))].map(id=>byId.get(id)).filter(Boolean);
  if(!items.length)return;
- if(items.length===1){await openMarker(items[0]);return;}
+ planActivation=event.pointerType==='touch'?{time:performance.now(),x:event.clientX,y:event.clientY}:null;
+ if(items.length===1){
+  openingMarker=true;
+  try{await openMarker(items[0]);}finally{openingMarker=false;}
+  return;
+ }
  const box=modal(tr('Elementi in questa zona'));
  box.classList.add('annotation-choices');
  for(const item of items){
   const choice=btn('',async()=>{
-   await closeModal();
-   await openMarker(item);
+   if(openingMarker)return;
+   openingMarker=true;
+   try{await closeModal();if(!dialogOpen)await openMarker(item);}
+   finally{openingMarker=false;}
   },'annotation-choice');
   const info=text('span',annotationHeading(item)+(item.title?' · '+item.title:''));
   info.append(text('small',pageName(item.page)+' · '+item.author_name));
@@ -889,13 +934,30 @@ function addNoteNavigation(note){
  $('dialog-footer').append(btn(tr('Chiudi'),closeModal));
 }
 function deleteAnnotationButton(action){
- const button=btn(tr('Elimina'),async()=>{
-  if(button.disabled||!canWrite()||!confirm(tr('Eliminare questa annotazione?')))return;
-  button.disabled=true;
-  try{await action(removeAnnotation);}
-  finally{button.disabled=false;}
+ const group=text('div','','delete-annotation');
+ const button=btn(tr('Elimina'),()=>{
+  if(!canWrite())return;
+  confirmation.hidden=false;
+  button.hidden=true;
+  cancel.focus();
  },'danger');
- return button;
+ const confirmation=text('div','','delete-confirmation');
+ confirmation.hidden=true;
+ confirmation.append(text('p',tr('Eliminare questa annotazione?')));
+ const cancel=btn(tr('Annulla eliminazione'),()=>{
+  confirmation.hidden=true;
+  button.hidden=false;
+  button.focus();
+ });
+ const remove=btn(tr('Conferma eliminazione'),async()=>{
+  if(remove.disabled||!canWrite())return;
+  remove.disabled=cancel.disabled=true;
+  try{await action(removeAnnotation);}
+  finally{remove.disabled=cancel.disabled=false;}
+ },'danger');
+ confirmation.append(cancel,remove);
+ group.append(button,confirmation);
+ return group;
 }
 
 async function removeAnnotation(annotation,before=annotation){
