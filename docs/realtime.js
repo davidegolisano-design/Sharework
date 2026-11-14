@@ -1,5 +1,5 @@
-import {SUPABASE_URL,SUPABASE_KEY} from './config.js?v=42e4a44c62cb';
-import {getSession} from './api.js?v=42e4a44c62cb';
+import {SUPABASE_URL,SUPABASE_KEY} from './config.js?v=29405451f96d';
+import {getSession} from './api.js?v=29405451f96d';
 export function watchChanges(onChange,onConnection=()=>{}){
  let socket,stopped=false,retry,heartbeat,ref=0,lastToken,awaiting=false,failures=0,joinTimer;
  const topic='realtime:sharework';
