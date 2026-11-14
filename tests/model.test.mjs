@@ -120,3 +120,10 @@ test('Work schedule applies only until its end and manual status takes priority'
  assert.equal(workState({...note,work_status:'paused'},Date.parse('2026-11-14T09:00Z')),'paused');
  assert.equal(workState({...note,work_status:'completed'},Date.parse('2026-11-14T09:00Z')),'completed');
 });
+
+test('The symbol filter includes matching work with an outlined region',()=>{
+ const work={shape:'welding',work_type:'painting',regions:[[[.1,.1],[.2,.1],[.2,.2]]]};
+ assert.deepEqual(filterNotes([work],{kind:'welding'}),[work]);
+ assert.deepEqual(filterNotes([work],{kind:'highlight'}),[work]);
+ assert.deepEqual(filterNotes([work],{kind:'painting'}),[]);
+});
