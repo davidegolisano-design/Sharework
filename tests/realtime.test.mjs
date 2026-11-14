@@ -6,7 +6,7 @@ test('Realtime authenticated subscription, event delivery, token rotation and st
  const source=(await readFile('src/realtime.js','utf8')).replace(/^import .*;\n/gm,'').replace('export function','function');vm.runInContext(source,ctx);
  const connection=[];
  const stop=ctx.watchChanges(()=>updates++,ready=>connection.push(ready)),socket=instances[0];socket.onopen();
- assert.equal(socket.sent[0].payload.access_token,'first');assert.equal(socket.sent[0].payload.config.postgres_changes.length,4);
+ assert.equal(socket.sent[0].payload.access_token,'first');assert.equal(socket.sent[0].payload.config.postgres_changes.length,6);
  socket.onmessage({data:JSON.stringify({event:'phx_reply',topic:'realtime:sharework',ref:socket.sent[0].ref,payload:{status:'ok'}})});
  assert.deepEqual(connection,[true]);assert.equal(updates,1);
  socket.onmessage({data:JSON.stringify({event:'postgres_changes',payload:{}})});assert.equal(updates,2);

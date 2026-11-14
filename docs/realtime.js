@@ -1,5 +1,5 @@
-import {SUPABASE_URL,SUPABASE_KEY} from './config.js?v=655cb7f2c255';
-import {getSession} from './api.js?v=655cb7f2c255';
+import {SUPABASE_URL,SUPABASE_KEY} from './config.js?v=e5323f5aad68';
+import {getSession} from './api.js?v=e5323f5aad68';
 export function watchChanges(onChange,onConnection=()=>{}){
  let socket,stopped=false,retry,heartbeat,ref=0,lastToken,awaiting=false,failures=0,joinTimer;
  const topic='realtime:sharework';
@@ -15,7 +15,7 @@ export function watchChanges(onChange,onConnection=()=>{}){
   let joinRef;
   socket.onopen=()=>{
    awaiting=false;
-   joinRef=send('phx_join',{config:{broadcast:{self:false,ack:false},presence:{enabled:false},postgres_changes:['sw_projects','sw_documents','sw_annotations','sw_profiles'].map(table=>({event:'*',schema:'public',table}))},access_token:lastToken});
+   joinRef=send('phx_join',{config:{broadcast:{self:false,ack:false},presence:{enabled:false},postgres_changes:['sw_projects','sw_documents','sw_annotations','sw_profiles','sw_work_categories','sw_work_emoji'].map(table=>({event:'*',schema:'public',table}))},access_token:lastToken});
    joinTimer=setTimeout(()=>socket.close(),12000);
    heartbeat=setInterval(()=>{
     if(awaiting){socket.close();return;}

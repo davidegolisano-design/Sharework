@@ -30,16 +30,20 @@ export function planPdf(jpeg,width,height){
  return new Blob(parts,{type:'application/pdf'});
 }
 
-export async function printPlan(viewer,visibleWidth,title,tr){
- viewer.draw(false);
+export async function printPlan({page,rect,width,height,drawOverlay,title,tr}){
  const snapshot=document.createElement('canvas');
- const ratio=viewer.canvas.width/viewer.container.clientWidth;
- snapshot.width=Math.max(1,Math.min(viewer.canvas.width,Math.round(visibleWidth*ratio)));
- snapshot.height=viewer.canvas.height;
+ const ratio=Math.min(3600/Math.max(width,height),3);
+ snapshot.width=Math.max(1,Math.round(width*ratio));
+ snapshot.height=Math.max(1,Math.round(height*ratio));
  const ctx=snapshot.getContext('2d',{alpha:false});
- ctx.fillStyle='#fff';ctx.fillRect(0,0,snapshot.width,snapshot.height);
- ctx.drawImage(viewer.canvas,0,0);
- ctx.drawImage(viewer.overlay,0,0);
+ await page.render({
+  canvasContext:ctx,viewport:page.getViewport({scale:rect.scale}),
+  transform:[ratio,0,0,ratio,rect.x*ratio,rect.y*ratio],background:'#fff'
+ }).promise;
+ ctx.setTransform(ratio,0,0,ratio,0,0);
+ ctx.save();ctx.beginPath();ctx.rect(rect.x,rect.y,rect.w,rect.h);ctx.clip();
+ drawOverlay(ctx,rect);
+ ctx.restore();
  const jpeg=await new Promise((resolve,reject)=>snapshot.toBlob(blob=>blob?resolve(blob):reject(Error(tr('Impossibile aprire il salvataggio PDF.'))),'image/jpeg',.92));
  const pdf=planPdf(new Uint8Array(await jpeg.arrayBuffer()),snapshot.width,snapshot.height);
  const name=title.replace(/[\\/:*?"<>|]/g,'-').slice(0,150)+'.pdf';

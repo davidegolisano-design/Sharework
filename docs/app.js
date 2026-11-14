@@ -1,13 +1,13 @@
-import {workStates,workState,localDateTime} from './work-schedule.js?v=655cb7f2c255';
-import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=655cb7f2c255';
-import {projectCover} from './cards.js?v=655cb7f2c255';
-import {watchChanges} from './realtime.js?v=655cb7f2c255';
-import * as api from './api.js?v=655cb7f2c255';
-import {Viewer,loadPdf,marker} from './viewer.js?v=655cb7f2c255';
-import {snapshot,grouped,clamp,annotationStrokes,normalizeSearch,searchRanges} from './model.js?v=655cb7f2c255';
-import {filterNotes,noteShapes,noteCategory,geometricSymbols,workCategories,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js?v=655cb7f2c255';
-import {finishRegion,legacyRegions} from './work-regions.js?v=655cb7f2c255';
-import {editShipPlan} from './ship-editor.js?v=655cb7f2c255';
+import {workStates,workState,localDateTime} from './work-schedule.js?v=e5323f5aad68';
+import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=e5323f5aad68';
+import {projectCover} from './cards.js?v=e5323f5aad68';
+import {watchChanges} from './realtime.js?v=e5323f5aad68';
+import * as api from './api.js?v=e5323f5aad68';
+import {Viewer,loadPdf,marker,drawLaser} from './viewer.js?v=e5323f5aad68';
+import {snapshot,grouped,clamp,annotationStrokes,normalizeSearch,searchRanges} from './model.js?v=e5323f5aad68';
+import {filterNotes,noteShapes,noteCategory,geometricSymbols,workCategories,setWorkCatalog,categoryLabel,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js?v=e5323f5aad68';
+import {finishRegion,legacyRegions} from './work-regions.js?v=e5323f5aad68';
+import {editShipPlan} from './ship-editor.js?v=e5323f5aad68';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
 let stopRealtime=null,refreshTimer,realtimeConnected=false,lastSafetyCheck=0,annotationRevision=0;
 const pendingSync=new Set();
@@ -27,6 +27,13 @@ const pageName = n => plan()?.overview.page===n ? 'General Overview' : plan()?.d
 const phoneLayout=matchMedia('(max-width:960px), (orientation:landscape) and (max-height:550px)');
 const filterIds = ['notes-query','notes-page','notes-kind','notes-author','notes-day','notes-work-status','notes-category'];
 const stateLabels=new Map(workStates);
+const categoryText=category=>category.icon+' '+(category.custom?category.label:categoryLabel(category.key,tr));
+let catalogRevision=0;
+async function refreshWorkCatalog(){
+ const revision=++catalogRevision,account=user?.id;
+ const rows=await api.table('sw_work_categories','select=id,name,sw_work_emoji(id,glyph,name)&sw_work_emoji.order=name.asc');
+ if(revision===catalogRevision&&account===user?.id)setWorkCatalog(rows);
+}
 let scheduleTimer;
 let finishPick = null;
 let areaSession = null;
@@ -154,7 +161,8 @@ async function restore(){
   if(!profile)throw Error(tr('Profilo non disponibile. La configurazione del database deve essere completata.'));
   if(!profile.approved){screen('waiting');return;}
   document.querySelectorAll('.user-name').forEach(el=>el.textContent=profile.full_name);applyRole();
-  await showProjects();
+  await refreshWorkCatalog().catch(report);
+  if(token===epoch)await showProjects();
  }catch(e){if(api.getSession()){screen('auth');$('auth-error').textContent=tr(e.message);}}
 }
 
@@ -175,6 +183,7 @@ async function logout({idle=false,signedOutElsewhere=false}={}){
  pdf=null;project=null;projectLevel=null;activeDocument=null;profile=user=null;
  annotations=[];projects=[];undo=[];redo=[];
  viewer.clear();
+ catalogRevision++;setWorkCatalog([]);
  setAuthMode('login');
  if(idle)$('auth-error').textContent=tr('Sessione terminata per inattività. Accedi di nuovo.');
  screen('auth');
@@ -497,6 +506,7 @@ async function page(n,{keepPosition=false}={}){
 function applyRole(){
  $('export-works').hidden=!canExportWorks();
  $('users-button').hidden=profile?.role!=='super_admin';
+ $('categories-button').hidden=!canConfigure();
  $('new-project').hidden=!canConfigure();
  $('edit-project').hidden=$('project-access').hidden=!canManage();
 }
@@ -573,15 +583,61 @@ $('panel-toggle').onclick=$('mobile-notes').onclick=$('notes-close').onclick=tog
 phoneLayout.addEventListener('change',()=>{panelHidden=phoneLayout.matches;$('mobile-tools').open=!phoneLayout.matches;applyPanel();});
 $('mobile-tools').open=!phoneLayout.matches;
 $('workspace-body').addEventListener('pointerdown',e=>{if(e.target.closest('#viewport'))$('mobile-tools').open=!phoneLayout.matches;});
-$('print-view').onclick=async()=>{
- if(!activeDocument||loading||areaSession||!viewer.pdfPage)return;
+$('print-view').onclick=()=>{
+ if(!activeDocument||loading||areaSession||!viewer.pdfPage||!plan())return;
+ const configuration=plan(), current=viewer.pageNumber, sourcePdf=pdf;
+ const box=modal(tr('Stampa PDF'));
+ const choices=text('div','','print-options');
+ const message=text('p','','muted');
+ message.setAttribute('role','status');
+ const deckSelect=document.createElement('select');
+ const deckLabel=text('label',tr('Ponte da stampare'));
+ deckLabel.append(deckSelect);
+ selectOptions(deckSelect,configuration.decks.map(deck=>[deck.page,deck.name]));
+ if(current!==configuration.overview.page)deckSelect.value=current;
+ deckLabel.hidden=current!==configuration.overview.page;
  const button=$('print-view');
- button.disabled=true;
- try{
-  const {printPlan}=await import('./plan-print.js?v=655cb7f2c255');
-  await printPlan(viewer,visiblePlanWidth(),[project.title,pageName(viewer.pageNumber)].join(' · '),tr);
- }catch(error){report(error);}
- finally{button.disabled=false;}
+ function option(label,getPage,partial=false){
+  const choice=btn(tr(label),async()=>{
+   const target=getPage();
+   if(!target||pdf!==sourcePdf||loading)return;
+   const filtered=visiblePlanNotes();
+   const marks=marksForPage(configuration,filtered,target);
+   const laserMark=laser&&laserOnPage(configuration,target,laser);
+   const title=[project.title,pageName(target)].join(' · ');
+   const width=visiblePlanWidth(),height=viewer.container.clientHeight;
+   const currentRect=viewer.rect();
+   button.disabled=true;
+   for(const item of choices.querySelectorAll('button'))item.disabled=true;
+   message.textContent=tr('Preparazione PDF…');
+   try{
+    const [{printPlan},printPage]=await Promise.all([import('./plan-print.js?v=e5323f5aad68'),sourcePdf.getPage(target)]);
+    const base=printPage.getViewport({scale:1});
+    const scale=1200/Math.max(base.width,base.height);
+    const full={x:0,y:0,w:base.width*scale,h:base.height*scale,scale};
+    const crop=partial&&target===current;
+    await printPlan({
+     page:printPage,rect:crop?currentRect:full,width:crop?width:full.w,height:crop?height:full.h,title,tr,
+     drawOverlay(ctx,rect){
+      viewer.drawMarks(ctx,rect,marks);
+      if(laserMark)drawLaser(ctx,rect,laserMark);
+     }
+    });
+    if(appDialog.open&&box.contains(choices))await closeModal();
+   }catch(error){message.textContent=tr(error.message);}
+   finally{
+    button.disabled=false;
+    for(const item of choices.querySelectorAll('button'))item.disabled=false;
+   }
+  });
+  choices.append(choice);
+  return choice;
+ }
+ option('Vista corrente',()=>current,true);
+ option('Tutto il ponte',()=>current===configuration.overview.page?Number(deckSelect.value):current)
+  .disabled=!configuration.decks.length;
+ option('Tutta la General Overview',()=>configuration.overview.page);
+ box.append(deckLabel,choices,message);
 };
 $('export-works').onclick=async()=>{
  if(!activeDocument||!project||!canExportWorks())return;
@@ -590,7 +646,7 @@ $('export-works').onclick=async()=>{
  const name=page=>configuration?.decks.find(deck=>deck.page===page)?.name||tr('Pagina')+' '+page;
  button.disabled=true;
  try{
-  const {exportWorks}=await import('./work-export.js?v=655cb7f2c255');
+  const {exportWorks}=await import('./work-export.js?v=e5323f5aad68');
   if(canExportWorks()&&!$('workspace').hidden)await exportWorks(works,configuration,title,name,tr,locale());
  }catch(error){report(error);}
  finally{button.disabled=false;}
@@ -655,19 +711,33 @@ $('notes-reset').onclick=()=>{
  refreshList();
 };
 
+function visiblePlanNotes(now=Date.now()){
+ const [query,page,kind,author,day,status,category]=filterIds.map(id=>$(id).value);
+ return filterNotes(annotations,{query,page,kind,category,author,day,status,now})
+  .map(note=>({...note,effectiveStatus:workState(note,now)}));
+}
+
+function marksForPage(ship,filtered,page,references){
+ const visible=filtered.filter(note=>note.effectiveStatus!=='completed');
+ const local=visible.filter(note=>note.page===page);
+ if(ship?.overview.page===page)return [...local,...projectMarks(ship,visible)];
+ const projected=references||(ship?deckReferences(ship,filtered,page):[]);
+ return [...local,...projected.filter(note=>note.effectiveStatus!=='completed')];
+}
+
 function refreshList(){
  clearTimeout(scheduleTimer);
  if(!activeDocument||!pdf||$('workspace').hidden) return;
  const overview=isOverview();
  const order=shipPageOrder(plan(),pdf.numPages);
  selectOptions($('notes-page'),[['',tr('Tutte')],...order.map(n=>[n,pageName(n)])]);
- selectOptions($('notes-kind'),[['',tr('Tutti')],...noteShapes.map(([key,label])=>[key,(emojiSymbols[key]||geometricSymbols[key])+' '+tr(label)]),['highlight',tr('Evidenziazione')]]);
+ selectOptions($('notes-kind'),[['',tr('Tutti')],...noteShapes.map(([key,label,custom])=>[key,(emojiSymbols[key]||geometricSymbols[key])+' '+(custom?label:tr(label))]),['highlight',tr('Evidenziazione')]]);
  const authors=new Map(annotations.filter(a=>!a.deleted).map(a=>[a.created_by,a.author_name]));
  selectOptions($('notes-author'),[['',tr('Tutti')],...[...authors].sort((a,b)=>a[1].localeCompare(b[1],locale()))]);
  selectOptions($('notes-work-status'),[['',tr('Tutti')],...workStates.map(([key,label])=>[key,tr(label)])]);
  const custom=new Map(annotations.filter(note=>!note.deleted).map(noteCategory).filter(category=>category?.custom)
   .map(category=>[category.key,category.icon+' '+category.label]));
- selectOptions($('notes-category'),[['',tr('Tutti')],...workCategories.map(([key,icon,label])=>[key,icon+' '+tr(label)]),...custom]);
+ selectOptions($('notes-category'),[['',tr('Tutti')],...workCategories.map(([key,icon])=>[key,icon+' '+categoryLabel(key,tr)]),...custom]);
  const [query,pageFilter,kind,author,day,statusFilter,categoryFilter]=filterIds.map(id=>$(id).value);
  const search=normalizeSearch(query).trim();
  const now=Date.now();
@@ -683,13 +753,9 @@ function refreshList(){
   }
  }
  if(Number.isFinite(boundary))scheduleTimer=setTimeout(refreshList,Math.min(boundary-now+10,2147483647));
- const filtered=filterNotes(annotations,{query,page:pageFilter,kind,category:categoryFilter,author,day,status:statusFilter,now})
-  .map(note=>({...note,effectiveStatus:workState(note,now)}));
- const visible=filtered.filter(note=>note.effectiveStatus!=='completed');
- const projected=overview?projectMarks(plan(),visible):[];
+ const filtered=visiblePlanNotes(now);
  const references=!overview&&plan()?deckReferences(plan(),filtered,viewer.pageNumber):[];
- const marks=overview?[...visible.filter(a=>a.page===viewer.pageNumber),...projected]
-  :[...visible,...references.filter(note=>note.effectiveStatus!=='completed')];
+ const marks=marksForPage(plan(),filtered,viewer.pageNumber,references);
  refreshLaser(false);
  viewer.setMarks(marks);
  const showAll=all||!!pageFilter;
@@ -712,7 +778,7 @@ function refreshList(){
   open.append(highlightMatch(text('span','','annotation-title'),title,search));
   open.append(text('span',tr(stateLabels.get(a.effectiveStatus)),'work-badge work-'+a.effectiveStatus));
   const category=noteCategory(a);
-  if(category)open.append(text('span',category.icon+' '+(category.custom?category.label:tr(category.label)),'annotation-author'));
+  if(category)open.append(text('span',categoryText(category),'annotation-author'));
   if(a.title&&a.number!=null&&search&&String(a.number).includes(search)){
    const number=text('span','','annotation-number');
    number.append('#',highlightMatch(text('span',''),String(a.number),search));
@@ -1115,7 +1181,7 @@ async function toolSettings(existing=null){
  function updateSymbol(){
   customCategory.parentElement.hidden=!geometricSymbols[choice.shape];
   const category=noteCategory({...choice,custom_category:customCategory.value});
-  categoryHint.textContent=category?category.icon+' '+(category.custom?category.label:tr(category.label)):'';
+  categoryHint.textContent=category?categoryText(category):'';
   color.parentElement.hidden=!hasArea&&Boolean(emojiSymbols[choice.shape]);
   for(const button of options.children){
    const selected=button.dataset.symbol===choice.shape;
@@ -1127,16 +1193,17 @@ async function toolSettings(existing=null){
 
  customCategory.oninput=updateSymbol;
  color.oninput=()=>{choice.color=color.value;preview();};
- for(const [shape,label] of noteShapes){
+ for(const [shape,label,custom] of noteShapes){
+  const displayLabel=custom?label:tr(label);
   const button=btn('',()=>{choice.shape=shape;updateSymbol();},'symbol-choice');
   button.dataset.symbol=shape;
-  button.title=tr(label);
-  button.setAttribute('aria-label',tr(label));
+  button.title=displayLabel;
+  button.setAttribute('aria-label',displayLabel);
   const icon=document.createElement('canvas');
   icon.width=icon.height=68;
   const ctx=icon.getContext('2d');ctx.scale(2,2);
   marker(ctx,17,17,'#2f529e',shape,null,11);
-  button.append(icon,text('span',tr(label)));
+  button.append(icon,text('span',displayLabel));
   options.append(button);
  }
  box.append(options);
@@ -1201,6 +1268,81 @@ function peopleSearch(box,{includeEmail=false}={}){
   get query(){return search.value;},
   set query(value){search.value=value;update();}
  };
+}
+
+$('categories-button').onclick=()=>manageWorkCatalog().catch(report);
+async function manageWorkCatalog(){
+ if(!canConfigure())return;
+ await refreshWorkCatalog();
+ if(!canConfigure())return;
+ const box=modal(tr('Categorie ed emoji'));
+ const tabs=text('div','','tabs');
+ const names=text('section'),emoji=text('section');
+ const feedback=text('p','','muted catalog-status');
+ feedback.setAttribute('role','status');
+ const selectTab=showEmoji=>{
+  names.hidden=showEmoji;emoji.hidden=!showEmoji;feedback.textContent='';
+  namesTab.classList.toggle('selected',!showEmoji);
+  emojiTab.classList.toggle('selected',showEmoji);
+  namesTab.setAttribute('aria-pressed',String(!showEmoji));
+  emojiTab.setAttribute('aria-pressed',String(showEmoji));
+ };
+ const namesTab=btn(tr('Categorie'),()=>selectTab(false));
+ const emojiTab=btn(tr('Aggiungi emoji'),()=>selectTab(true));
+ tabs.append(namesTab,emojiTab);
+ box.append(tabs,feedback,names,emoji);
+ const categorySelect=document.createElement('select');
+ const categoryField=text('label',tr('Categoria'));
+ categoryField.append(categorySelect);
+ const updateOptions=()=>selectOptions(categorySelect,workCategories.map(([id,icon])=>[id,icon+' '+categoryLabel(id,tr)]));
+ async function save(button,operation,onSave){
+  if(!canConfigure()||button.disabled)return;
+  button.disabled=true;
+  try{
+   await operation();
+   await refreshWorkCatalog();
+   if(box.contains(button)){
+    onSave();
+    feedback.textContent=tr('Modifiche salvate.');
+   }
+  }catch(error){feedback.textContent=tr(error.message);}
+  finally{button.disabled=false;}
+ }
+ for(const [id,icon] of workCategories){
+  const row=text('div','','catalog-row');
+  const name=field(row,icon+' '+tr('Nome categoria'),{value:categoryLabel(id,tr)});
+  name.maxLength=60;
+  const button=btn(tr('Salva'),()=>save(button,async()=>{
+   const value=name.value.trim();
+   if(!value)throw Error(tr('Inserisci un nome.'));
+   if(value===categoryLabel(id,tr))return;
+   const rows=await api.table('sw_work_categories','id=eq.'+id,{method:'PATCH',body:{name:value}});
+   if(!rows.length)throw Error(tr('Operazione non riuscita'));
+  },()=>{name.value=categoryLabel(id,tr);updateOptions();}));
+  name.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();button.click();}};
+  row.append(button);names.append(row);
+ }
+ const glyph=field(emoji,tr('Emoji'));
+ glyph.maxLength=48;
+ const name=field(emoji,tr('Nome emoji'));
+ name.maxLength=60;
+ updateOptions();
+ const added=text('div','','catalog-emoji-list');
+ function renderAdded(){
+  added.replaceChildren(...noteShapes.filter(entry=>entry[2]).map(([id,label])=>text('span',emojiSymbols[id]+' '+label)));
+ }
+ renderAdded();
+ const add=btn(tr('Aggiungi emoji'),()=>save(add,async()=>{
+  const value=glyph.value.trim(), label=name.value.trim();
+  const pictograph=/\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20e3/u;
+  if(!pictograph.test(value)||[...new Intl.Segmenter().segment(value)].length!==1)throw Error(tr('Inserisci una sola emoji.'));
+  const identity=value.replaceAll('\ufe0f','');
+  if(Object.values(emojiSymbols).some(emoji=>emoji.replaceAll('\ufe0f','')===identity))throw Error(tr('Questa emoji è già disponibile.'));
+  if(!label)throw Error(tr('Inserisci un nome.'));
+  await api.table('sw_work_emoji','',{method:'POST',body:{category_id:categorySelect.value,glyph:value,name:label}});
+ },()=>{glyph.value='';name.value='';renderAdded();}),'primary');
+ emoji.append(categoryField,add,added);
+ selectTab(false);
 }
 
 $('users-button').onclick=()=>manageUsers().catch(report);
@@ -1312,6 +1454,8 @@ function onRealtimeChange(change){
   if(!row.id||row.id===user?.id)queueRefresh();
  }else if(change.table==='sw_documents'){
   if(activeDocument&&(!row.project_id||row.project_id===project?.id))queueRefresh();
+ }else if(change.table==='sw_work_categories'||change.table==='sw_work_emoji'){
+  queueRefresh('catalog');
  }else if(change.table==='sw_projects'&&!$('projects').hidden)queueRefresh();
 }
 async function syncVisible(){
@@ -1319,12 +1463,19 @@ async function syncVisible(){
  if(polling||loading||setupLoading){scheduleRefresh();return;}
  const busy=dialogOpen||finishPick||areaSession;
  const full=pendingSync.has('all');
+ const catalog=pendingSync.has('catalog');
+ const notes=pendingSync.has('annotations');
  if(busy&&!full)return;
  pendingSync.clear();
  polling=true;const token=epoch,revision=annotationRevision;
  try{
+  if(catalog||full){
+   await refreshWorkCatalog().catch(()=>{lastSafetyCheck=0;});
+   if(token!==epoch)return;
+   if(catalog&&!full)refreshList();
+  }
   if(!full){
-   if(!activeDocument)return;
+   if(!notes||!activeDocument)return;
    const id=activeDocument.id;
    const rows=await api.table('sw_annotations','document_id=eq.'+id+'&select=*&order=created_at.asc');
    if(token!==epoch)return;
