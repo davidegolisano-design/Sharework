@@ -1,4 +1,5 @@
 const english = {
+ "Impossibile aprire il salvataggio Excel.":"Could not open the Excel save dialog.",
  "Salva":"Save",
  "Cambia nome":"Rename",
  "Cerca per nome o email…":"Search by name or email…",
