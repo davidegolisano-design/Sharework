@@ -1,3 +1,4 @@
+import {workTypes,workStates,workState,localDateTime} from './work-schedule.js';
 import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js';
 import {projectCover} from './cards.js';
 import {watchChanges} from './realtime.js';
@@ -24,7 +25,9 @@ const isOverview = () => plan()?.overview.page === viewer.pageNumber;
 const canPlace = () => canWrite() && Boolean(plan()?.decks.some(deck=>deck.page===viewer.pageNumber));
 const pageName = n => plan()?.overview.page===n ? 'General Overview' : plan()?.decks.find(deck=>deck.page===n)?.name || tr('Pagina')+' '+n;
 const phoneLayout=matchMedia('(max-width:960px), (orientation:landscape) and (max-height:550px)');
-const filterIds = ['notes-query','notes-page','notes-kind','notes-author','notes-day'];
+const filterIds = ['notes-query','notes-page','notes-kind','notes-author','notes-day','notes-work-type','notes-work-status'];
+const stateLabels=new Map(workStates),typeLabels=new Map(workTypes);
+let scheduleTimer;
 let finishPick = null;
 let areaSession = null;
 let laser = null;
@@ -264,7 +267,7 @@ $('new-project').onclick=()=>projectEditor();
 $('edit-project').onclick=()=>projectEditor(project);
 
 function projectEditor(existing=null){
- if(!canManage())return;
+ if(existing?!canManage():!canConfigure())return;
  const box=modal(tr(existing?'Modifica progetto':'Nuovo progetto'));
  const title=field(box,tr('Nome progetto'),{value:existing?.title||''});
  title.maxLength=180;
@@ -274,6 +277,7 @@ function projectEditor(existing=null){
  file.accept='image/jpeg,image/png,image/webp';
  const remove=existing?.cover_image?field(box,tr('Rimuovi copertina'),{type:'checkbox'}):null;
  const submit=btn(tr(existing?'Salva progetto':'Crea progetto'),async()=>{
+  if(existing?!canManage():!canConfigure())return;
   if(!title.value.trim())throw Error(tr('Inserisci il nome del progetto.'));
   if(!start.value||!end.value||end.value<start.value)throw Error(tr('Indica un periodo valido.'));
   submit.disabled=true;
@@ -333,12 +337,30 @@ async function showProjectSettings(p){
  if(canConfigure()){
   if(current)box.append(btn(tr('Configura piano nave'),()=>startShipSetup(current,current.id)));
   box.append(btn(tr(current?'Sostituisci piano nave':'Carica piano nave'),()=>uploadShipPlan(current?.id||null),'primary'));
+  box.append(btn(tr('Elimina progetto'),()=>confirmProjectRemoval(p),'danger'));
   for(const draft of rows.filter(doc=>!doc.ship_plan&&doc.page_count>1)){
    box.append(btn(tr('Configura PDF già caricato')+' · '+draft.title,()=>startShipSetup(draft,current?.id||null)));
   }
  }
 }
 
+function confirmProjectRemoval(p){
+ if(!canConfigure())return;
+ const box=modal(tr('Elimina progetto'));
+ box.append(text('strong',p.title),text('p',tr('Il progetto verrà rimosso dall’elenco e i suoi accessi saranno disattivati.')));
+ const remove=btn(tr('Conferma eliminazione'),async()=>{
+  if(!canConfigure()||remove.disabled)return;
+  remove.disabled=true;
+  dialogClose=()=>false;
+  try{
+   await api.rpc('sw_remove_project',{target:p.id});
+   dialogClose=null;
+   await closeModal();
+   await showProjects();
+  }finally{dialogClose=null;remove.disabled=false;}
+ },'danger');
+ $('dialog-footer').append(btn(tr('Annulla selezione'),closeModal),remove);
+}
 $('project-access').onclick=()=>manageProjectAccess().catch(report);
 async function manageProjectAccess(){
  if(!canManage()||!project)return;
@@ -475,7 +497,8 @@ async function page(n,{keepPosition=false}={}){
 function applyRole(){
  $('export-works').hidden=!canExportWorks();
  $('users-button').hidden=profile?.role!=='super_admin';
- $('new-project').hidden=$('edit-project').hidden=$('project-access').hidden=!canManage();
+ $('new-project').hidden=!canConfigure();
+ $('edit-project').hidden=$('project-access').hidden=!canManage();
 }
 
 function selectOptions(select,options){
@@ -623,26 +646,44 @@ $('notes-reset').onclick=()=>{
 };
 
 function refreshList(){
- if(!activeDocument||!pdf) return;
+ clearTimeout(scheduleTimer);
+ if(!activeDocument||!pdf||$('workspace').hidden) return;
  const overview=isOverview();
  const order=shipPageOrder(plan(),pdf.numPages);
  selectOptions($('notes-page'),[['',tr('Tutte')],...order.map(n=>[n,pageName(n)])]);
  selectOptions($('notes-kind'),[['',tr('Tutti')],...noteShapes.map(([key,label])=>[key,(emojiSymbols[key]||({circle:'●',square:'■',diamond:'◆',triangle:'▲'})[key])+' '+tr(label)]),['highlight',tr('Evidenziazione')]]);
  const authors=new Map(annotations.filter(a=>!a.deleted).map(a=>[a.created_by,a.author_name]));
  selectOptions($('notes-author'),[['',tr('Tutti')],...[...authors].sort((a,b)=>a[1].localeCompare(b[1],locale()))]);
- const [query,pageFilter,kind,author,day]=filterIds.map(id=>$(id).value);
+ for(const [id,choices] of [['notes-work-type',workTypes],['notes-work-status',workStates]]){
+  selectOptions($(id),[['',tr('Tutti')],...choices.map(([key,label])=>[key,tr(label)])]);
+ }
+ const [query,pageFilter,kind,author,day,workType,statusFilter]=filterIds.map(id=>$(id).value);
  const search=normalizeSearch(query).trim();
- const filtered=filterNotes(annotations,{query,page:pageFilter,kind,author,day});
- const projected=overview?projectMarks(plan(),filtered):[];
+ const now=Date.now();
+ const filtering=Boolean(search||pageFilter||kind||author||day||workType||statusFilter);
+ $('workspace-body').classList.toggle('filters-active',filtering);
+ $('viewport').querySelector('.filtered-plan-label').hidden=!filtering;
+ let boundary=Infinity;
+ for(const note of annotations){
+  if(note.deleted||note.work_status)continue;
+  for(const value of [note.work_start,note.work_end]){
+   const time=Date.parse(value);
+   if(time>now)boundary=Math.min(boundary,time);
+  }
+ }
+ if(Number.isFinite(boundary))scheduleTimer=setTimeout(refreshList,Math.min(boundary-now+10,2147483647));
+ const filtered=filterNotes(annotations,{query,page:pageFilter,kind,author,day,workType,status:statusFilter,now})
+  .map(note=>({...note,effectiveStatus:workState(note,now)}));
+ const visible=filtered.filter(note=>note.effectiveStatus!=='completed');
+ const projected=overview?projectMarks(plan(),visible):[];
  const references=!overview&&plan()?deckReferences(plan(),filtered,viewer.pageNumber):[];
- const marks=overview?[...filtered.filter(a=>a.page===viewer.pageNumber),...projected]:[...filtered,...references];
+ const marks=overview?[...visible.filter(a=>a.page===viewer.pageNumber),...projected]
+  :[...visible,...references.filter(note=>note.effectiveStatus!=='completed')];
  refreshLaser(false);
  viewer.setMarks(marks);
- const projectedIds=new Set(projected.map(a=>a.id));
  const showAll=all||!!pageFilter;
- const list=overview&&!showAll
-  ? grouped(filtered.filter(a=>projectedIds.has(a.id)||a.page===viewer.pageNumber),viewer.pageNumber,true)
-  : grouped(showAll?filtered:[...filtered,...references],viewer.pageNumber,showAll);
+ const list=overview?grouped(filtered,viewer.pageNumber,true)
+  :grouped(showAll?filtered:[...filtered,...references],viewer.pageNumber,showAll);
  if(plan())list.sort((a,b)=>order.indexOf(a.page)-order.indexOf(b.page));
  selectOptions($('notes-scope'),[['current',tr(overview?'Overview':'Ponte attuale')],['all',tr('Tutte')]]);
  $('notes-scope').value=all?'all':'current';
@@ -657,6 +698,8 @@ function refreshList(){
   const row=text('div','','annotation'),open=btn('',()=>openListedNote(a),'annotation-open');
   const title=a.title||(a.kind==='note'?tr('Nota')+' '+a.number:tr('Evidenziazione'));
   open.append(highlightMatch(text('span','','annotation-title'),title,search));
+  open.append(text('span',tr(stateLabels.get(a.effectiveStatus)),'work-badge work-'+a.effectiveStatus));
+  if(a.work_type)open.append(text('span',tr(typeLabels.get(a.work_type)),'annotation-author'));
   if(a.title&&a.number!=null&&search&&String(a.number).includes(search)){
    const number=text('span','','annotation-number');
    number.append('#',highlightMatch(text('span',''),String(a.number),search));
@@ -680,6 +723,7 @@ function refreshList(){
   const range=start==null?'':(' · '+frameNumber.format(start)+'–'+frameNumber.format(end));
   if(frame!=null)open.append(text('span',tr('Ordinata')+' '+frameNumber.format(frame)+range,'annotation-author'));
   const b=badge(a);
+  b.classList.toggle('work-muted',a.effectiveStatus!=='started');
   b.onclick=()=>openListedNote(a).catch(report);
   row.append(b,open);
   if(canWrite())row.append(btn('⋮',()=>annotationMenu(annotations.find(note=>note.id===a.id)||a),'more'));
@@ -700,7 +744,7 @@ async function makeAnnotation(values){if(loading||dialogOpen||finishPick||!proje
 async function openListedNote(note){
  if(dialogOpen||finishPick||loading||areaSession)return;
  await goToNote(note);
- if(!canWrite())await openAnnotation(note);
+ await openAnnotation(note);
 }
 
 function annotationHeading(annotation){
@@ -765,6 +809,11 @@ async function openAnnotation(initial,before=initial){
   box.append(text('div',author,'author-detail'));
   if(current.title)box.append(text('h3',current.title,'note-reading-title'));
   if(current.description)box.append(text('p',current.description,'note-reading-description'));
+  box.append(text('p',tr(stateLabels.get(workState(current)))));
+  if(current.work_type)box.append(text('p',tr(typeLabels.get(current.work_type))));
+  for(const [label,value] of [['Inizio previsto',current.work_start],['Fine prevista',current.work_end]]){
+   if(value)box.append(text('p',tr(label)+' · '+date(value)));
+  }
   addNoteNavigation(current);
   return;
  }
@@ -781,18 +830,48 @@ async function openAnnotation(initial,before=initial){
  const title=field(box,tr('Titolo'),{value:current.title}),description=field(box,tr('Descrizione'),{value:current.description,multiline:true});
  title.maxLength=250;
  description.maxLength=20000;
+ const initialStart=current.work_start,initialEnd=current.work_end;
+ const scheduling=text('div','','work-scheduling');
+ box.append(scheduling);
+ function selectWork(label,choices,value){
+  const wrapper=text('label',tr(label)),select=document.createElement('select');
+  selectOptions(select,choices.map(([key,title])=>[key,tr(title)]));
+  select.value=value||'';
+  wrapper.append(select);scheduling.append(wrapper);
+  return select;
+ }
+ const workType=selectWork('Tipologia lavoro',[['','Non specificata'],...workTypes],current.work_type);
+ const workStatus=selectWork('Stato',[['','Automatico da orario'],...workStates],current.work_status);
+ const workStart=field(scheduling,tr('Inizio previsto'),{type:'datetime-local',value:localDateTime(current.work_start)});
+ const workEnd=field(scheduling,tr('Fine prevista'),{type:'datetime-local',value:localDateTime(current.work_end)});
+ const effective=text('p','','work-schedule-state');
+ scheduling.append(effective);
+ function scheduleValues(){
+  return {work_type:workType.value||null,work_status:workStatus.value||null,
+   work_start:workStart.value?workStart.value===localDateTime(initialStart)&&initialStart ? initialStart:new Date(workStart.value).toISOString():null,
+   work_end:workEnd.value?workEnd.value===localDateTime(initialEnd)&&initialEnd ? initialEnd:new Date(workEnd.value).toISOString():null};
+ }
+ const showState=()=>{effective.textContent=tr('Stato')+' · '+tr(stateLabels.get(workState(scheduleValues())));};
+ showState();
  function flush(){
-  const values={title:title.value,description:description.value};
+  const values={title:title.value,description:description.value,...scheduleValues()};
   chain=chain.then(async()=>{
    if(!box.contains(title))return;
-   if(values.title===current.title&&values.description===current.description){failed=false;return;}
+   if(values.work_start&&values.work_end&&values.work_start>=values.work_end){
+    failed=true;toast(tr('La fine deve essere successiva all’inizio.'));return;
+   }
+   if(Object.entries(values).every(([key,value])=>(key==='work_start'||key==='work_end')
+    ?Date.parse(value)===Date.parse(current[key])||value==null&&current[key]==null
+    :value===current[key])){failed=false;return;}
    status(tr('Salvataggio…'));
    try{current=await patch(current,values);failed=false;status(tr('Salvato'));}
    catch(e){failed=true;status(tr('Non salvato'));report(e);}
   });
   return chain;
  }
- for(const el of [title,description])el.oninput=()=>{clearTimeout(timer);timer=setTimeout(flush,500);};
+ for(const el of [title,description,workType,workStatus,workStart,workEnd])el.oninput=()=>{
+   showState();clearTimeout(timer);timer=setTimeout(flush,500);
+ };
  $('dialog-footer').append(btn(tr('Aspetto'),async()=>{
   await closeModal();
   if(!dialogOpen)await toolSettings(current);
@@ -1273,8 +1352,8 @@ setInterval(()=>{
  if(document.hidden||!api.getSession())return;
  if(!realtimeConnected||Date.now()-lastSafetyCheck>=60000)queueRefresh();
 },15000+Math.floor(Math.random()*5000));
-window.addEventListener('online',()=>{if(!document.hidden&&checkInactivity())queueRefresh();});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&checkInactivity())queueRefresh();});
+window.addEventListener('online',()=>{if(!document.hidden&&checkInactivity()){refreshList();queueRefresh();}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&checkInactivity()){refreshList();queueRefresh();}});
 window.addEventListener('offline',()=>toast(tr('Connessione assente. Le nuove modifiche richiedono Internet.')));
 registerStatic();
 translateStatic();

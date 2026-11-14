@@ -1,9 +1,9 @@
 import * as pdfjs from './vendor/build/pdf.mjs';
-import {normalized,contrast,clamp,annotationStrokes,segmentDistance,pointInRing,touchSelection} from './model.js?v=a71834d7bc03';
+import {normalized,contrast,clamp,annotationStrokes,segmentDistance,pointInRing,touchSelection} from './model.js?v=1e39aee683ff';
 pdfjs.GlobalWorkerOptions.workerSrc=new URL('./vendor/build/pdf.worker.mjs',import.meta.url).href;
 const vendor=new URL('./vendor/',import.meta.url).href;
 export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendor+'cmaps/',cMapPacked:true,standardFontDataUrl:vendor+'standard_fonts/',wasmUrl:vendor+'wasm/',iccUrl:vendor+'iccs/',isEvalSupported:false}).promise;}
-import {emojiSymbols} from './ship-model.js?v=a71834d7bc03';
+import {emojiSymbols} from './ship-model.js?v=1e39aee683ff';
 const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
 const emojiSize=r=>r*1.8;
@@ -13,7 +13,7 @@ const badgeWidth=metrics=>Math.max(14,metrics.width+6);
 const rectangleDistance=(x,y,left,top,right,bottom)=>
  Math.hypot(Math.max(0,left-x,x-right),Math.max(0,top-y,y-bottom));
 import polygonClipping from './vendor/polygon-union.js';
-import {rectangularRegion} from './work-regions.js?v=a71834d7bc03';
+import {rectangularRegion} from './work-regions.js?v=1e39aee683ff';
 const regionCache=new WeakMap();
 function unionRegions(regions){
  if(!regions?.length)return [];
@@ -223,16 +223,21 @@ export class Viewer{
  const marks=this.marks.filter(a=>a.page===this.pageNumber&&!a.deleted);
  for(const a of marks){
   if(a.id===this.areaDraft?.id)continue;
-  this.drawRegions(ov,r,a.regions,a.color);
+  const muted=a.effectiveStatus&&a.effectiveStatus!=='started';
+  const color=muted?'#8793a1':a.color;
+  this.drawRegions(ov,r,a.regions,color,true,muted?.55:1);
   for(const stroke of annotationStrokes(a)){
    const {width,pixels}=highlightGeometry(a,r,stroke);
-   this.strokeLine(ov,pixels,a.color,width,a.opacity);
+   this.strokeLine(ov,pixels,color,width,a.opacity*(muted?.55:1));
   }
  }
  for(const a of marks){
   if(a.id===this.areaDraft?.id)continue;
   const [x,y]=markPosition(a,r);
+  ov.save();
+  if(a.effectiveStatus&&a.effectiveStatus!=='started'){ov.filter='grayscale(1)';ov.globalAlpha=.52;}
   marker(ov,x,y,a.color,a.shape,a.number);
+  ov.restore();
  }
  if(this.areaDraft){
   const {regions,vertices,color}=this.areaDraft;
@@ -258,7 +263,7 @@ export class Viewer{
  }
  ov.restore();
  if(render){this.revision++;clearTimeout(this.timer);this.timer=setTimeout(()=>this.renderDetail(),100);}}
- drawRegions(ctx,rect,regions,color,merge=true){
+ drawRegions(ctx,rect,regions,color,merge=true,alpha=1){
   const polygons=merge?unionRegions(regions):regions.map(ring=>[ring]);
   if(!polygons.length)return;
   ctx.save();ctx.beginPath();
@@ -267,8 +272,8 @@ export class Viewer{
    ctx.moveTo(...pixels[0]);for(const point of pixels.slice(1))ctx.lineTo(...point);
    ctx.closePath();
   }
-  ctx.fillStyle=ctx.strokeStyle=color;ctx.globalAlpha=.22;ctx.fill('evenodd');
-  ctx.globalAlpha=1;ctx.lineWidth=2;ctx.setLineDash([7,5]);ctx.stroke();ctx.restore();
+  ctx.fillStyle=ctx.strokeStyle=color;ctx.globalAlpha=.22*alpha;ctx.fill('evenodd');
+  ctx.globalAlpha=alpha;ctx.lineWidth=2;ctx.setLineDash([7,5]);ctx.stroke();ctx.restore();
  }
  strokeLine(ctx,points,color,width,opacity){
   if(!points.length)return;
