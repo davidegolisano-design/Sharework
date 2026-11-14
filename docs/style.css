@@ -225,3 +225,9 @@ dialog textarea{min-height:85px}
 .people-list .user-row{gap:8px}
 .people-list .user-row span{min-width:0;overflow-wrap:anywhere}
 @media (max-width:420px){.people-list .user-row{display:grid;grid-template-columns:1fr auto}.people-list .user-row span{grid-column:1/-1}}
+
+.search-match{background:#ffe48a;color:#302408;border-radius:2px;box-decoration-break:clone}
+.annotation-number{font-size:11px;color:var(--muted)}
+.symbol-picker{display:grid;grid-template-columns:repeat(auto-fit,minmax(68px,1fr));max-height:min(34dvh,310px);overflow:auto}
+.symbol-picker button{min-width:0;font-size:10px;line-height:1.2;white-space:normal;padding:4px}
+.symbol-picker canvas{width:34px;height:34px}

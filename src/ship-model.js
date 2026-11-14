@@ -1,8 +1,15 @@
-import {annotationStrokes} from './model.js';
-export const emojiSymbols = {flame:'🔥',warning:'⚠️',electric:'⚡',tool:'🔧'};
+import {annotationStrokes,normalizeSearch} from './model.js';
+const workSymbols = [
+  ['flame','🔥','Fiamma'], ['warning','⚠️','Attenzione'], ['electric','⚡','Elettrico'], ['tool','🔧','Attrezzatura'],
+  ['welding','🧑‍🏭','Saldatura'], ['pipes','🚰','Tubazioni'], ['lifting','🏗️','Sollevamento'],
+  ['painting','🖌️','Pittura'], ['inspection','🔍','Ispezione'], ['ppe','⛑️','Sicurezza'],
+  ['cleaning','🧹','Pulizia'], ['fire_watch','🧯','Antincendio'], ['mechanical','⚙️','Meccanica'],
+  ['drilling','🛠️','Foratura e montaggio'], ['measurement','📏','Misurazione'], ['testing','🧪','Prove']
+];
+export const emojiSymbols = Object.fromEntries(workSymbols.map(([key,emoji])=>[key,emoji]));
 export const noteShapes = [
   ['circle', 'Punto'], ['square', 'Quadrato'], ['diamond', 'Rombo'], ['triangle', 'Triangolo'],
-  ['flame', 'Fiamma'], ['warning', 'Attenzione'], ['electric', 'Elettrico'], ['tool', 'Attrezzatura']
+  ...workSymbols.map(([key,,label])=>[key,label])
 ];
 
 export function shipPageOrder(plan, count) {
@@ -123,12 +130,12 @@ export function projectMarks(plan, annotations) {
 }
 
 export function filterNotes(annotations, {query, page, kind, author, day}) {
-  const search = query.trim().toLocaleLowerCase('it');
+  const search = normalizeSearch(query).trim();
   return annotations.filter(a => {
     const localDay = day ? new Date(a.created_at).toLocaleDateString('sv-SE') : '';
     return !a.deleted && (!page || a.page === Number(page)) &&
       (!kind || kind === (annotationStrokes(a).length || a.regions?.length ? 'highlight' : a.shape)) &&
       (!author || a.created_by === author) && (!day || day === localDay) &&
-      (!search || [a.title,a.description,a.number,a.author_name].some(value => String(value ?? '').toLocaleLowerCase('it').includes(search)));
+      (!search || [a.title,a.description,a.number,a.author_name].some(value => normalizeSearch(value).includes(search)));
   });
 }

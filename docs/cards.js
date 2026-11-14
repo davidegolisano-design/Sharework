@@ -1,4 +1,4 @@
-import {tr} from './locale.js?v=c2bcde7bf0b7';
+import {tr} from './locale.js?v=03f283fa0580';
 
 export async function projectCover(file) {
  if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size > 20000000) {

@@ -28,3 +28,21 @@ export function touchSelection(candidates,x,y){
   .filter(hit=>hit.distance<=clickRadius).sort((a,b)=>a.distance-b.distance)
   .map(({item})=>item);
 }
+
+export const normalizeSearch=value=>String(value??'').normalize('NFD').replace(/\p{M}/gu,'').toLowerCase();
+
+export function searchRanges(value,query){
+ if(!query)return [];
+ const ranges=[],positions=[];
+ let folded='',offset=0;
+ for(const segment of value.matchAll(/\P{M}\p{M}*|\p{M}+/gu)){
+  const original=segment[0],part=normalizeSearch(original);
+  offset=segment.index+original.length;
+  for(let index=0;index<part.length;index++)positions.push([segment.index,offset]);
+  folded+=part;
+ }
+ for(let start=folded.indexOf(query);start>=0;start=folded.indexOf(query,start+query.length)){
+  ranges.push([positions[start][0],positions[start+query.length-1][1]]);
+ }
+ return ranges;
+}
