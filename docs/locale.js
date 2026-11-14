@@ -1,4 +1,6 @@
 const english = {
+ "Eliminare questa categoria? I lavori già salvati manterranno il simbolo e la categoria.":"Delete this category? Saved jobs will keep their symbol and category.",
+ "Categoria eliminata. Scegli un altro simbolo.":"Category deleted. Choose another symbol.",
  "Gestione categorie":"Manage categories",
  "Categorie":"Categories",
  "Aggiungi categoria":"Add category",

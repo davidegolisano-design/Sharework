@@ -6,7 +6,7 @@ test('Grouping, normalized coordinates and hit detection',()=>{
 });
 
 
-import {filterNotes,projectMarks,shipPageOrder,mapDeckView,longitudinalScale,placeLaser,laserOnPage,frameAt,deckReferences,workFrameRange,noteCategory,emojiSymbols,noteShapes,setWorkCatalog,workCategories} from '../src/ship-model.js';
+import {filterNotes,projectMarks,shipPageOrder,mapDeckView,longitudinalScale,placeLaser,laserOnPage,frameAt,deckReferences,workFrameRange,noteCategory,emojiSymbols,noteShapes,setWorkCatalog,workCategories,isArchivedSymbol} from '../src/ship-model.js';
 
 test('Ship plans project a shared frame across scales and orientations',()=>{
  const overview={page:1,frame0:0,frame1:74,x0:.2,x1:.6,meters:51.06};
@@ -150,4 +150,17 @@ test('A custom category is selectable as a symbol and keeps its filter identity 
   assert.equal(workCategories.filter(([id])=>id===category.id).length,1);
  }finally{setWorkCatalog([]);}
  assert.equal(emojiSymbols[category.id],undefined);
+});
+
+test('Archived categories preserve old markers and the four shapes use shared names',()=>{
+ const id='emoji_'+'b'.repeat(32);
+ try{
+  setWorkCatalog([{id,name:'Ispezione serbatoi',glyph:'🧰',archived:true},{id:'triangle',name:'Intervento urgente'}]);
+  assert.ok(!workCategories.some(([key])=>key===id));
+  assert.equal(isArchivedSymbol(id),true);
+  assert.equal(noteCategory({shape:id}).icon,'🧰');
+  assert.equal(noteCategory({shape:'triangle'}).label,'Intervento urgente');
+  assert.equal(noteCategory({shape:'triangle',custom_category:'Storico'}).label,'Storico');
+  assert.deepEqual(noteShapes.find(([key])=>key==='triangle'),['triangle','Intervento urgente',true]);
+ }finally{setWorkCatalog([]);}
 });
