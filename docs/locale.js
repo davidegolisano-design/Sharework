@@ -1,8 +1,9 @@
 const english = {
- "Categorie ed emoji":"Categories and emoji",
+ "Gestione categorie":"Manage categories",
  "Categorie":"Categories",
- "Aggiungi emoji":"Add emoji",
- "Nome emoji":"Emoji name",
+ "Aggiungi categoria":"Add category",
+ "Crea categoria":"Create category",
+ "Emoji della categoria":"Category emoji",
  "Inserisci un nome.":"Enter a name.",
  "Inserisci una sola emoji.":"Enter a single emoji.",
  "Questa emoji è già disponibile.":"This emoji is already available.",

@@ -31,7 +31,7 @@ const categoryText=category=>category.icon+' '+(category.custom?category.label:c
 let catalogRevision=0;
 async function refreshWorkCatalog(){
  const revision=++catalogRevision,account=user?.id;
- const rows=await api.table('sw_work_categories','select=id,name,sw_work_emoji(id,glyph,name)&sw_work_emoji.order=name.asc');
+ const rows=await api.table('sw_work_categories','select=id,name,glyph,sw_work_emoji(id,glyph,name)&order=name.asc,id.asc&sw_work_emoji.order=name.asc');
  if(revision===catalogRevision&&account===user?.id)setWorkCatalog(rows);
 }
 let scheduleTimer;
@@ -1275,26 +1275,22 @@ async function manageWorkCatalog(){
  if(!canConfigure())return;
  await refreshWorkCatalog();
  if(!canConfigure())return;
- const box=modal(tr('Categorie ed emoji'));
+ const box=modal(tr('Gestione categorie'));
  const tabs=text('div','','tabs');
- const names=text('section'),emoji=text('section');
+ const names=text('section'),create=text('section');
  const feedback=text('p','','muted catalog-status');
  feedback.setAttribute('role','status');
- const selectTab=showEmoji=>{
-  names.hidden=showEmoji;emoji.hidden=!showEmoji;feedback.textContent='';
-  namesTab.classList.toggle('selected',!showEmoji);
-  emojiTab.classList.toggle('selected',showEmoji);
-  namesTab.setAttribute('aria-pressed',String(!showEmoji));
-  emojiTab.setAttribute('aria-pressed',String(showEmoji));
- };
+ function selectTab(showCreate){
+  names.hidden=showCreate;create.hidden=!showCreate;feedback.textContent='';
+  namesTab.classList.toggle('selected',!showCreate);
+  createTab.classList.toggle('selected',showCreate);
+  namesTab.setAttribute('aria-pressed',String(!showCreate));
+  createTab.setAttribute('aria-pressed',String(showCreate));
+ }
  const namesTab=btn(tr('Categorie'),()=>selectTab(false));
- const emojiTab=btn(tr('Aggiungi emoji'),()=>selectTab(true));
- tabs.append(namesTab,emojiTab);
- box.append(tabs,feedback,names,emoji);
- const categorySelect=document.createElement('select');
- const categoryField=text('label',tr('Categoria'));
- categoryField.append(categorySelect);
- const updateOptions=()=>selectOptions(categorySelect,workCategories.map(([id,icon])=>[id,icon+' '+categoryLabel(id,tr)]));
+ const createTab=btn(tr('Aggiungi categoria'),()=>selectTab(true));
+ tabs.append(namesTab,createTab);
+ box.append(tabs,feedback,names,create);
  async function save(button,operation,onSave){
   if(!canConfigure()||button.disabled)return;
   button.disabled=true;
@@ -1308,40 +1304,41 @@ async function manageWorkCatalog(){
   }catch(error){feedback.textContent=tr(error.message);}
   finally{button.disabled=false;}
  }
- for(const [id,icon] of workCategories){
-  const row=text('div','','catalog-row');
-  const name=field(row,icon+' '+tr('Nome categoria'),{value:categoryLabel(id,tr)});
-  name.maxLength=60;
-  const button=btn(tr('Salva'),()=>save(button,async()=>{
-   const value=name.value.trim();
-   if(!value)throw Error(tr('Inserisci un nome.'));
-   if(value===categoryLabel(id,tr))return;
-   const rows=await api.table('sw_work_categories','id=eq.'+id,{method:'PATCH',body:{name:value}});
-   if(!rows.length)throw Error(tr('Operazione non riuscita'));
-  },()=>{name.value=categoryLabel(id,tr);updateOptions();}));
-  name.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();button.click();}};
-  row.append(button);names.append(row);
+ function renderCategories(){
+  names.replaceChildren();
+  for(const [id,icon] of workCategories){
+   const row=text('div','','catalog-row');
+   const name=field(row,icon+' '+tr('Nome categoria'),{value:categoryLabel(id,tr)});
+   name.maxLength=60;
+   const button=btn(tr('Salva'),()=>save(button,async()=>{
+    const value=name.value.trim();
+    if(!value)throw Error(tr('Inserisci un nome.'));
+    if(value===categoryLabel(id,tr))return;
+    const rows=await api.table('sw_work_categories','id=eq.'+id,{method:'PATCH',body:{name:value}});
+    if(!rows.length)throw Error(tr('Operazione non riuscita'));
+   },()=>{name.value=categoryLabel(id,tr);}));
+   name.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();button.click();}};
+   row.append(button);names.append(row);
+  }
  }
- const glyph=field(emoji,tr('Emoji'));
- glyph.maxLength=48;
- const name=field(emoji,tr('Nome emoji'));
+ const name=field(create,tr('Nome categoria'));
  name.maxLength=60;
- updateOptions();
- const added=text('div','','catalog-emoji-list');
- function renderAdded(){
-  added.replaceChildren(...noteShapes.filter(entry=>entry[2]).map(([id,label])=>text('span',emojiSymbols[id]+' '+label)));
- }
- renderAdded();
- const add=btn(tr('Aggiungi emoji'),()=>save(add,async()=>{
+ const glyph=field(create,tr('Emoji della categoria'));
+ glyph.maxLength=48;
+ const add=btn(tr('Crea categoria'),()=>save(add,async()=>{
   const value=glyph.value.trim(), label=name.value.trim();
   const pictograph=/\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20e3/u;
-  if(!pictograph.test(value)||[...new Intl.Segmenter().segment(value)].length!==1)throw Error(tr('Inserisci una sola emoji.'));
-  const identity=value.replaceAll('\ufe0f','');
-  if(Object.values(emojiSymbols).some(emoji=>emoji.replaceAll('\ufe0f','')===identity))throw Error(tr('Questa emoji è già disponibile.'));
   if(!label)throw Error(tr('Inserisci un nome.'));
-  await api.table('sw_work_emoji','',{method:'POST',body:{category_id:categorySelect.value,glyph:value,name:label}});
- },()=>{glyph.value='';name.value='';renderAdded();}),'primary');
- emoji.append(categoryField,add,added);
+  if(!pictograph.test(value)||[...value].length>24||[...new Intl.Segmenter().segment(value)].length!==1)throw Error(tr('Inserisci una sola emoji.'));
+  const identity=value.replaceAll('\ufe0f','');
+  if(Object.values(emojiSymbols).some(symbol=>symbol.replaceAll('\ufe0f','')===identity))throw Error(tr('Questa emoji è già disponibile.'));
+  await api.table('sw_work_categories','',{method:'POST',body:{glyph:value,name:label}});
+ },()=>{
+  glyph.value='';name.value='';
+  renderCategories();selectTab(false);
+ }),'primary');
+ create.append(add);
+ renderCategories();
  selectTab(false);
 }
 

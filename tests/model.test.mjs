@@ -6,7 +6,7 @@ test('Grouping, normalized coordinates and hit detection',()=>{
 });
 
 
-import {filterNotes,projectMarks,shipPageOrder,mapDeckView,longitudinalScale,placeLaser,laserOnPage,frameAt,deckReferences,workFrameRange} from '../src/ship-model.js';
+import {filterNotes,projectMarks,shipPageOrder,mapDeckView,longitudinalScale,placeLaser,laserOnPage,frameAt,deckReferences,workFrameRange,noteCategory,emojiSymbols,noteShapes,setWorkCatalog,workCategories} from '../src/ship-model.js';
 
 test('Ship plans project a shared frame across scales and orientations',()=>{
  const overview={page:1,frame0:0,frame1:74,x0:.2,x1:.6,meters:51.06};
@@ -134,4 +134,20 @@ test('Fixed emoji categories and custom shape categories filter independently',a
  for(const shape of Object.keys(emojiSymbols))assert.ok(noteCategory({shape}));
  assert.deepEqual(filterNotes(notes,{category:'hot_work'}),notes.slice(0,2));
  assert.deepEqual(filterNotes(notes,{category:'custom:coibentazione'}),notes.slice(2));
+});
+
+test('A custom category is selectable as a symbol and keeps its filter identity when renamed',()=>{
+ const category={id:'emoji_'+'a'.repeat(32),glyph:'🌡️',name:'Collaudo termico'};
+ const note={id:'a',kind:'note',shape:category.id};
+ try{
+  setWorkCatalog([category]);
+  assert.equal(emojiSymbols[category.id],category.glyph);
+  assert.ok(noteShapes.some(([id,label])=>id===category.id&&label===category.name));
+  assert.ok(workCategories.some(([id])=>id===category.id));
+  setWorkCatalog([{...category,name:'Collaudo impianti'}]);
+  assert.equal(noteCategory(note).label,'Collaudo impianti');
+  assert.deepEqual(filterNotes([note],{category:category.id}),[note]);
+  assert.equal(workCategories.filter(([id])=>id===category.id).length,1);
+ }finally{setWorkCatalog([]);}
+ assert.equal(emojiSymbols[category.id],undefined);
 });
