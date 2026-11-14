@@ -1,19 +1,27 @@
 import * as pdfjs from './vendor/build/pdf.mjs';
-import {normalized,contrast,clamp,annotationStrokes,segmentDistance,pointInRing,touchSelection} from './model.js?v=2a96e4f38bd2';
+import {normalized,contrast,clamp,annotationStrokes,segmentDistance,pointInRing,touchSelection} from './model.js?v=f96817ccc7d6';
 pdfjs.GlobalWorkerOptions.workerSrc=new URL('./vendor/build/pdf.worker.mjs',import.meta.url).href;
 const vendor=new URL('./vendor/',import.meta.url).href;
 export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendor+'cmaps/',cMapPacked:true,standardFontDataUrl:vendor+'standard_fonts/',wasmUrl:vendor+'wasm/',iccUrl:vendor+'iccs/',isEvalSupported:false}).promise;}
-import {emojiSymbols} from './ship-model.js?v=2a96e4f38bd2';
+import {emojiSymbols} from './ship-model.js?v=f96817ccc7d6';
 const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
 const emojiSize=r=>r*1.8;
+const outlineWidth=2;
+const shapeRing={
+ square:[[-1,-1],[1,-1],[1,1],[-1,1]],
+ diamond:[[0,-1],[1,0],[0,1],[-1,0]],
+ triangle:[[0,-1],[1,1],[-1,1]]
+};
+const shapeRadius=r=>(emojiSize(r)-outlineWidth)/2;
+const shapePoints=(shape,x,y,r)=>shapeRing[shape]?.map(([dx,dy])=>[x+dx*r,y+dy*r]);
 const emojiFont=r=>`${emojiSize(r)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
 const badgeFont='700 10px system-ui';
 const badgeWidth=metrics=>Math.max(14,metrics.width+6);
 const rectangleDistance=(x,y,left,top,right,bottom)=>
  Math.hypot(Math.max(0,left-x,x-right),Math.max(0,top-y,y-bottom));
 import polygonClipping from './vendor/polygon-union.js';
-import {rectangularRegion} from './work-regions.js?v=2a96e4f38bd2';
+import {rectangularRegion} from './work-regions.js?v=f96817ccc7d6';
 const regionCache=new WeakMap();
 function unionRegions(regions){
  if(!regions?.length)return [];
@@ -38,11 +46,16 @@ export function marker(ctx,x,y,color,shape,number,r=markerRadius){
   return;
  }
  ctx.beginPath();
- if(shape==='square')ctx.rect(x-r,y-r,r*2,r*2);
- else if(shape==='diamond'){ctx.moveTo(x,y-r*1.3);ctx.lineTo(x+r*1.3,y);ctx.lineTo(x,y+r*1.3);ctx.lineTo(x-r*1.3,y);ctx.closePath();}
- else if(shape==='triangle'){ctx.moveTo(x,y-r*1.3);ctx.lineTo(x+r*1.2,y+r);ctx.lineTo(x-r*1.2,y+r);ctx.closePath();}
- else ctx.arc(x,y,r,0,Math.PI*2);
- ctx.strokeStyle='white';ctx.lineWidth=4;ctx.stroke();ctx.fillStyle=color;ctx.fill();
+ const radius=shape==='highlight'?r:shapeRadius(r);
+ const ring=shapePoints(shape,x,y,radius);
+ if(ring){
+  ctx.moveTo(...ring[0]);
+  for(const point of ring.slice(1))ctx.lineTo(...point);
+  ctx.closePath();
+ }else ctx.arc(x,y,radius,0,Math.PI*2);
+ ctx.strokeStyle='white';ctx.lineWidth=shape==='highlight'?4:outlineWidth;
+ if(shape!=='highlight')ctx.lineJoin='round';
+ ctx.stroke();ctx.fillStyle=color;ctx.fill();
  ctx.fillStyle=contrast(color);
  if(shape==='highlight'){
   const size=r*1.4;
@@ -99,10 +112,11 @@ function pathDistance(x,y,points,closed=false){
 
 function markDistance(annotation,rect,x,y,ctx){
  const [cx,cy]=markPosition(annotation,rect);
- const radius=markerRadius+2;
+ // Keep the existing tap tolerance as the geometric artwork shrinks.
+ const touchPadding=markerRadius+2-shapeRadius(markerRadius);
  let distance;
  if(!annotation.shape||annotation.shape==='circle'){
-  distance=Math.hypot(x-cx,y-cy)-radius;
+  distance=Math.hypot(x-cx,y-cy)-(markerRadius+2);
  }else if(emojiSymbols[annotation.shape]){
   const glyph=emojiSymbols[annotation.shape];
   ctx?.save();
@@ -117,12 +131,9 @@ function markDistance(annotation,rect,x,y,ctx){
    cx-bound(metrics?.actualBoundingBoxLeft),cy-bound(metrics?.actualBoundingBoxAscent),
    cx+bound(metrics?.actualBoundingBoxRight),cy+bound(metrics?.actualBoundingBoxDescent));
  }else{
-  const r=markerRadius;
-  const offsets=annotation.shape==='triangle'?[[0,-r*1.3],[r*1.2,r],[-r*1.2,r]]
-   :annotation.shape==='diamond'?[[0,-r*1.3],[r*1.3,0],[0,r*1.3],[-r*1.3,0]]
-   :[[-r,-r],[r,-r],[r,r],[-r,r]];
-  const ring=offsets.map(([dx,dy])=>[cx+dx,cy+dy]);
-  distance=pointInRing(x,y,ring)?0:pathDistance(x,y,ring,true)-2;
+  const ring=shapePoints(annotation.shape,cx,cy,shapeRadius(markerRadius));
+  if(ring)distance=pointInRing(x,y,ring)?0:pathDistance(x,y,ring,true)-touchPadding;
+  else distance=Math.hypot(x-cx,y-cy)-(markerRadius+2);
  }
  if(annotation.number!=null){
   ctx?.save();
@@ -145,7 +156,7 @@ function markDistance(annotation,rect,x,y,ctx){
 }
 
 function markerY(annotation,rect){
- const clearance=annotation.projected&&!annotation.centered ? projectedOffset+(annotation.shape==='diamond'?markerRadius*.3:0)+(emojiSymbols[annotation.shape]?4:0) : 0;
+ const clearance=annotation.projected&&!annotation.centered ? projectedOffset+(emojiSymbols[annotation.shape]?4:0) : 0;
  return rect.y+annotation.y*rect.h-clearance;
 }
 
