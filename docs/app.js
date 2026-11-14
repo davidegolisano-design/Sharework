@@ -1,12 +1,12 @@
-import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=76c5c8ec8f00';
-import {projectCover} from './cards.js?v=76c5c8ec8f00';
-import {watchChanges} from './realtime.js?v=76c5c8ec8f00';
-import * as api from './api.js?v=76c5c8ec8f00';
-import {Viewer,loadPdf,marker} from './viewer.js?v=76c5c8ec8f00';
-import {snapshot,grouped,clamp,annotationStrokes} from './model.js?v=76c5c8ec8f00';
-import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js?v=76c5c8ec8f00';
-import {finishRegion,legacyRegions} from './work-regions.js?v=76c5c8ec8f00';
-import {editShipPlan} from './ship-editor.js?v=76c5c8ec8f00';
+import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=4655d7915517';
+import {projectCover} from './cards.js?v=4655d7915517';
+import {watchChanges} from './realtime.js?v=4655d7915517';
+import * as api from './api.js?v=4655d7915517';
+import {Viewer,loadPdf,marker} from './viewer.js?v=4655d7915517';
+import {snapshot,grouped,clamp,annotationStrokes} from './model.js?v=4655d7915517';
+import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js?v=4655d7915517';
+import {finishRegion,legacyRegions} from './work-regions.js?v=4655d7915517';
+import {editShipPlan} from './ship-editor.js?v=4655d7915517';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
 let stopRealtime=null,refreshTimer,realtimeConnected=false,lastSafetyCheck=0,annotationRevision=0;
 const pendingSync=new Set();
@@ -518,7 +518,7 @@ $('export-works').onclick=async()=>{
  const name=page=>configuration?.decks.find(deck=>deck.page===page)?.name||tr('Pagina')+' '+page;
  button.disabled=true;
  try{
-  const {exportWorks}=await import('./work-export.js?v=76c5c8ec8f00');
+  const {exportWorks}=await import('./work-export.js?v=4655d7915517');
   await exportWorks(works,configuration,title,name,tr,locale());
  }catch(error){report(error);}
  finally{button.disabled=false;}

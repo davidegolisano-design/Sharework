@@ -6,7 +6,8 @@ export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendo
 import {emojiSymbols} from './ship-model.js';
 const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
-const emojiFont=r=>`${r*1.8}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+const emojiSize=r=>r*1.8;
+const emojiFont=r=>`${emojiSize(r)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
 const badgeFont='700 10px system-ui';
 const badgeWidth=metrics=>Math.max(14,metrics.width+6);
 const rectangleDistance=(x,y,left,top,right,bottom)=>
@@ -108,10 +109,13 @@ function markDistance(annotation,rect,x,y,ctx){
   if(ctx){ctx.font=emojiFont(markerRadius);ctx.textAlign='center';ctx.textBaseline='middle';}
   const metrics=ctx?.measureText(glyph);
   ctx?.restore();
-  const half=markerRadius*.9;
+  // Color-emoji ink metrics vary by platform and can describe only part of
+  // the painted glyph. Include the full icon cell and any larger ink bounds.
+  const half=emojiSize(markerRadius)/2;
+  const bound=value=>Math.max(half,Number.isFinite(value)?value:0);
   distance=rectangleDistance(x,y,
-   cx-(metrics?.actualBoundingBoxLeft||half),cy-(metrics?.actualBoundingBoxAscent||half),
-   cx+(metrics?.actualBoundingBoxRight||half),cy+(metrics?.actualBoundingBoxDescent||half));
+   cx-bound(metrics?.actualBoundingBoxLeft),cy-bound(metrics?.actualBoundingBoxAscent),
+   cx+bound(metrics?.actualBoundingBoxRight),cy+bound(metrics?.actualBoundingBoxDescent));
  }else{
   const r=markerRadius;
   const offsets=annotation.shape==='triangle'?[[0,-r*1.3],[r*1.2,r],[-r*1.2,r]]
@@ -212,7 +216,7 @@ export class Viewer{
   this.centerView(x,y,{visibleWidth});
  }
  fit(){this.zoom=1;this.minZoom=1;this.panX=this.panY=0;this.draw();}
- zoomAt(f,x,y){const r=this.rect();if(!r)return;const next=Math.max(this.minZoom??1,this.zoom*f);if(!Number.isFinite(next))return;const ratio=next/this.zoom;this.panX=(this.panX+this.container.clientWidth/2-x)*ratio+x-this.container.clientWidth/2;this.panY=(this.panY+this.container.clientHeight/2-y)*ratio+y-this.container.clientHeight/2;this.zoom=next;this.draw();}
+ zoomAt(f,x,y){const r=this.rect();if(!r)return;this.touchPoint=null;const next=Math.max(this.minZoom??1,this.zoom*f);if(!Number.isFinite(next))return;const ratio=next/this.zoom;this.panX=(this.panX+this.container.clientWidth/2-x)*ratio+x-this.container.clientWidth/2;this.panY=(this.panY+this.container.clientHeight/2-y)*ratio+y-this.container.clientHeight/2;this.zoom=next;this.draw();}
  setMarks(marks){this.marks=marks;this.draw(false);}
  draw(render=true){const w=this.container.clientWidth,h=this.container.clientHeight;if(!w||!h)return;this.ratio=Math.min(devicePixelRatio||1,Math.sqrt(10000000/(w*h)));for(const c of [this.canvas,this.overlay]){if(c.width!==Math.round(w*this.ratio)||c.height!==Math.round(h*this.ratio)){c.width=Math.round(w*this.ratio);c.height=Math.round(h*this.ratio);}}
  const ctx=this.canvas.getContext('2d');ctx.setTransform(this.ratio,0,0,this.ratio,0,0);ctx.clearRect(0,0,w,h);const ov=this.overlay.getContext('2d');ov.setTransform(this.ratio,0,0,this.ratio,0,0);ov.clearRect(0,0,w,h);const r=this.rect();if(!r)return;ctx.fillStyle='white';ctx.fillRect(r.x,r.y,r.w,r.h);if(this.detail){const d=this.detail,k=r.scale/d.rect.scale;ctx.drawImage(d.canvas,(r.x-d.rect.x*k),(r.y-d.rect.y*k),d.w*k,d.h*k);}
@@ -316,6 +320,11 @@ export class Viewer{
   // A primary contact starts a new touch stream, even if a WebView lost an
   // up/cancel event from the previous pinch.
   if(e.isPrimary&&this.pointers.size)this.resetGesture();
+  if(this.touchPoint){
+   clearTimeout(this.touchTimer);
+   this.touchPoint=null;
+   this.draw(false);
+  }
   this.container.setPointerCapture(e.pointerId);
   const point=this.local(e);
   this.pointers.set(e.pointerId,point);
