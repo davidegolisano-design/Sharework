@@ -1,10 +1,10 @@
 import {tr} from './locale.js';
 import {SUPABASE_URL as URL,SUPABASE_KEY as KEY} from './config.js';
-const SESSION='sharework.session';let session;try{session=JSON.parse(localStorage.getItem(SESSION)||'null');}catch{session=null;}
+export const SESSION='sharework.session';let session;try{session=JSON.parse(localStorage.getItem(SESSION)||'null');}catch{session=null;}
 let refreshing;
 export function getSession(){return session;}
 export function setSession(s){session=s;if(s)localStorage.setItem(SESSION,JSON.stringify(s));else localStorage.removeItem(SESSION);}
-async function renew(){if(!session?.refresh_token)throw Error(tr('Accedi nuovamente.'));if(!refreshing)refreshing=(async()=>{const r=await fetch(URL+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:KEY,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:session.refresh_token})});const data=await r.json();if(!r.ok){setSession(null);throw Error(tr('Sessione scaduta. Accedi nuovamente.'));}setSession({...data,expires_at:Date.now()/1000+data.expires_in});})().finally(()=>refreshing=null);return refreshing;}
+async function renew(){if(!session?.refresh_token)throw Error(tr('Accedi nuovamente.'));if(!refreshing)refreshing=(async()=>{const before=session;const r=await fetch(URL+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:KEY,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:before.refresh_token})});const data=await r.json();if(session!==before)throw Error(tr('Accedi nuovamente.'));if(!r.ok){setSession(null);throw Error(tr('Sessione scaduta. Accedi nuovamente.'));}setSession({...data,expires_at:Date.now()/1000+data.expires_in});})().finally(()=>refreshing=null);return refreshing;}
 export async function request(path,{method='GET',body,raw=false,anonymous=false,headers={}}={}){
  if(!anonymous&&session&&session.expires_at<Date.now()/1000+60)await renew();
  const h={apikey:KEY,...headers};if(session&&!anonymous)h.Authorization='Bearer '+session.access_token;
@@ -14,7 +14,18 @@ export async function request(path,{method='GET',body,raw=false,anonymous=false,
 }
 export async function signIn(email,password){const d=await request('/auth/v1/token?grant_type=password',{method:'POST',body:{email,password},anonymous:true});setSession({...d,expires_at:Date.now()/1000+d.expires_in});}
 export async function signUp(email,password,full_name){const d=await request('/auth/v1/signup?redirect_to='+encodeURIComponent(location.origin+location.pathname),{method:'POST',body:{email,password,data:{full_name}},anonymous:true});if(d.access_token)setSession({...d,expires_at:Date.now()/1000+d.expires_in});return d;}
-export async function signOut(){try{if(session)await request('/auth/v1/logout',{method:'POST'});}finally{setSession(null);}}
+export async function signOut({idle=false}={}){
+ const previous=session;
+ if(!idle){
+  try{if(session)await request('/auth/v1/logout',{method:'POST'});}
+  finally{setSession(null);}
+  return;
+ }
+ setSession(null);
+ if(previous)await request('/auth/v1/logout?scope=local',{
+  method:'POST',anonymous:true,headers:{Authorization:'Bearer '+previous.access_token}
+ });
+}
 export function authCallback(){const hash=new URLSearchParams(location.hash.slice(1));if(hash.has('access_token')){setSession({access_token:hash.get('access_token'),refresh_token:hash.get('refresh_token'),expires_at:Date.now()/1000+Number(hash.get('expires_in')||3600)});history.replaceState(null,'',location.pathname);return hash.get('type');}if(hash.has('error_description')){const message=hash.get('error_description');history.replaceState(null,'',location.pathname);throw Error(message);}return null;}
 export const table=(name,query='',options={})=>request('/rest/v1/'+name+(query?'?'+query:''),{...options,headers:{Prefer:'return=representation',...options.headers}});
 export const rpc=(name,body)=>request('/rest/v1/rpc/'+name,{method:'POST',body});
