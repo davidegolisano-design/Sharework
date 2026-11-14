@@ -1,4 +1,5 @@
 const english = {
+ "Espandi barra strumenti":"Expand toolbar",
  "Mostra cerchio di tocco":"Show tap circle",
  "Esporta Excel":"Export Excel",
  "Forma dell’area":"Area shape",

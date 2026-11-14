@@ -1,5 +1,5 @@
 try {
- await import('./app.js?v=0f9a44514d9c');
+ await import('./app.js?v=76c5c8ec8f00');
 } catch (error) {
  console.error('Sharework startup failed',error);
  const message=document.getElementById('auth-error');
