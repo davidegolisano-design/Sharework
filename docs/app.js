@@ -1,13 +1,14 @@
-import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=b6fd6f6b8684';
-import {projectCover} from './cards.js?v=b6fd6f6b8684';
-import {watchChanges} from './realtime.js?v=b6fd6f6b8684';
-import * as api from './api.js?v=b6fd6f6b8684';
-import {Viewer,loadPdf,marker} from './viewer.js?v=b6fd6f6b8684';
-import {snapshot,grouped,clamp,annotationStrokes} from './model.js?v=b6fd6f6b8684';
-import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,placeLaser,laserOnPage} from './ship-model.js?v=b6fd6f6b8684';
-import {editShipPlan} from './ship-editor.js?v=b6fd6f6b8684';
+import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=42e4a44c62cb';
+import {projectCover} from './cards.js?v=42e4a44c62cb';
+import {watchChanges} from './realtime.js?v=42e4a44c62cb';
+import * as api from './api.js?v=42e4a44c62cb';
+import {Viewer,loadPdf,marker} from './viewer.js?v=42e4a44c62cb';
+import {snapshot,grouped,clamp,annotationStrokes} from './model.js?v=42e4a44c62cb';
+import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,placeLaser,laserOnPage} from './ship-model.js?v=42e4a44c62cb';
+import {editShipPlan} from './ship-editor.js?v=42e4a44c62cb';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
-let stopRealtime=null,refreshTimer;
+let stopRealtime=null,refreshTimer,realtimeConnected=false,lastSafetyCheck=0,annotationRevision=0;
+const pendingSync=new Set();
 let user,profile,projects=[],project,projectLevel,activeDocument,annotations=[],pdf,authMode='login',dialogClose=null,dialogOpen=false,polling=false,epoch=0;
 let all=localStorage.getItem('sw.all')==='true',panelWidth=Number(localStorage.getItem('sw.panelWidth'))||290,panelHidden=false,undo=[],redo=[],loading=false;
 const roles = {super_admin:'Super admin', admin:'Admin', member:'Utente', viewer:'Visualizzatore'};
@@ -77,14 +78,14 @@ function status(value){$('sync-state').textContent=value;}
 function date(value){return new Date(value).toLocaleString(locale(),{dateStyle:'short',timeStyle:'short'});}
 function mode(value){if(value&&laser){laser=null;refreshLaser();}if(phoneLayout.matches)$('mobile-tools').open=false;viewer.mode=canPlace()&&!finishPick&&viewer.mode!==value?value:null;$('note-tool').classList.toggle('active',viewer.mode==='note');}
 function modal(title,onClose=null){if($('dialog').open)throw Error(tr('Chiudi prima la finestra aperta.'));dialogOpen=true;dialogClose=onClose;$('dialog-title').textContent=title;$('dialog-body').replaceChildren();$('dialog-footer').replaceChildren();$('dialog').showModal();return $('dialog-body');}
-async function closeModal(){if(dialogClose&&await dialogClose()===false)return;dialogClose=null;dialogOpen=false;$('dialog').close();queueRefresh();}
+async function closeModal(){if(dialogClose&&await dialogClose()===false)return;dialogClose=null;dialogOpen=false;$('dialog').close();scheduleRefresh();}
 $('dialog-close').onclick=()=>closeModal().catch(report);$('dialog').addEventListener('cancel',e=>{e.preventDefault();closeModal().catch(report);});$('dialog-form').onsubmit=e=>e.preventDefault();
 function field(parent,title,{value='',type='text',multiline=false,min,max,step}={}){const label=text('label',title),input=document.createElement(multiline?'textarea':'input');if(!multiline)input.type=type;input.value=value;if(min!==undefined)input.min=min;if(max!==undefined)input.max=max;if(step!==undefined)input.step=step;label.append(input);parent.append(label);return input;}
 function setAuthMode(value){authMode=value;$('name-field').hidden=value!=='signup';$('full-name').required=value==='signup';$('signup-hint').hidden=value!=='signup';$('password').autocomplete=value==='signup'?'new-password':'current-password';$('auth-title').textContent=tr(value==='signup'?'Crea il tuo account':'Accedi al tuo spazio');$('auth-submit').textContent=tr(value==='signup'?'Registrati →':'Accedi →');$('login-tab').classList.toggle('selected',value==='login');$('signup-tab').classList.toggle('selected',value==='signup');$('auth-error').textContent='';}
 $('login-tab').onclick=()=>setAuthMode('login');$('signup-tab').onclick=()=>setAuthMode('signup');
 $('auth-form').onsubmit=async e=>{e.preventDefault();$('auth-submit').disabled=true;$('auth-error').textContent='';try{if(authMode==='signup'){await api.signUp($('email').value.trim(),$('password').value,$('full-name').value.trim());if(!api.getSession()){$('auth-error').textContent=tr('Controlla la tua email per confermare la registrazione. Poi accedi per verificare l’approvazione.');$('password').value='';return;}}else await api.signIn($('email').value.trim(),$('password').value);$('password').value='';await restore();}catch(e){$('auth-error').textContent=tr(e.message);}finally{$('auth-submit').disabled=false;}};
 $('reset-password').onclick=async()=>{const email=$('email').value.trim();if(!email||!$('email').checkValidity()){toast(tr('Inserisci la tua email.'));return;}try{await api.request('/auth/v1/recover?redirect_to='+encodeURIComponent(location.origin+location.pathname),{method:'POST',body:{email},anonymous:true});toast(tr('Se l’account esiste, riceverai il link per reimpostare la password.'));}catch(e){report(e);}};
-async function restore(){if(!api.getSession()){stopRealtime?.();stopRealtime=null;screen('auth');return;}try{user=await api.request('/auth/v1/user');const rows=await api.table('sw_profiles','id=eq.'+user.id+'&select=*');profile=rows[0];stopRealtime?.();stopRealtime=watchChanges(queueRefresh);if(!profile)throw Error(tr('Profilo non disponibile. La configurazione del database deve essere completata.'));if(!profile.approved){screen('waiting');return;}document.querySelectorAll('.user-name').forEach(el=>el.textContent=profile.full_name);applyRole();await showProjects();}catch(e){screen('auth');$('auth-error').textContent=tr(e.message);}}
+async function restore(){if(!api.getSession()){stopRealtime?.();stopRealtime=null;screen('auth');return;}try{user=await api.request('/auth/v1/user');const rows=await api.table('sw_profiles','id=eq.'+user.id+'&select=*');profile=rows[0];stopRealtime?.();realtimeConnected=false;stopRealtime=watchChanges(onRealtimeChange,connected=>{realtimeConnected=connected;if(!connected)queueRefresh();});if(!profile)throw Error(tr('Profilo non disponibile. La configurazione del database deve essere completata.'));if(!profile.approved){screen('waiting');return;}document.querySelectorAll('.user-name').forEach(el=>el.textContent=profile.full_name);applyRole();await showProjects();}catch(e){screen('auth');$('auth-error').textContent=tr(e.message);}}
 async function logout(){cancelPick();if(dialogOpen&&!await tryClose())return;stopRealtime?.();stopRealtime=null;epoch++;await clearShipSetup();project=null;projectLevel=null;activeDocument=null;viewer.clear();await pdf?.destroy();pdf=null;await api.signOut();profile=user=null;annotations=[];projects=[];screen('auth');}
 async function tryClose(){await closeModal();return !dialogOpen;}
 document.querySelectorAll('.logout').forEach(b=>b.onclick=()=>logout().catch(report));$('check-approval').onclick=()=>restore().catch(report);
@@ -379,6 +380,7 @@ function cancelPick(){
  viewer.pick=null;
  viewer.guides=[];
  $('pick-banner').hidden=true;
+ scheduleRefresh();
 }
 async function pickNotePoint(target,label,onPick){
  await page(target);
@@ -477,6 +479,7 @@ function refreshList(){
  updatePages();
 }
 function merge(a){
+ annotationRevision++;
  const i=annotations.findIndex(x=>x.id===a.id);
  if(i<0)annotations.push(a);else annotations[i]=a;
  refreshList();
@@ -844,17 +847,58 @@ function dismissNoteSession(){
  $('dialog-body').replaceChildren();
  $('dialog-footer').replaceChildren();
 }
-function queueRefresh(){clearTimeout(refreshTimer);refreshTimer=setTimeout(syncVisible,180);}
+function scheduleRefresh(){
+ if(refreshTimer||!pendingSync.size||document.hidden||!api.getSession())return;
+ refreshTimer=setTimeout(()=>{
+  refreshTimer=null;
+  void syncVisible();
+ },180);
+}
+
+function queueRefresh(scope='all'){
+ pendingSync.add(typeof scope==='string'?scope:'all');
+ scheduleRefresh();
+}
+
+function onRealtimeChange(change){
+ if(!change?.table){queueRefresh();return;}
+ const row=change.record||change.old_record||{};
+ if(change.table==='sw_annotations'){
+  if(activeDocument&&(!row.document_id||row.document_id===activeDocument.id))queueRefresh('annotations');
+ }else if(change.table==='sw_profiles'){
+  if(!row.id||row.id===user?.id)queueRefresh();
+ }else if(change.table==='sw_documents'){
+  if(activeDocument&&(!row.project_id||row.project_id===project?.id))queueRefresh();
+ }else if(change.table==='sw_projects'&&!$('projects').hidden)queueRefresh();
+}
 async function syncVisible(){
- if(polling||loading||setupLoading||document.hidden||!api.getSession()||!user)return;
- polling=true;const token=epoch;
+ if(document.hidden||!api.getSession()||!user||!pendingSync.size)return;
+ if(polling||loading||setupLoading){scheduleRefresh();return;}
+ const busy=dialogOpen||finishPick||areaSession;
+ const full=pendingSync.has('all');
+ if(busy&&!full)return;
+ pendingSync.clear();
+ polling=true;const token=epoch,revision=annotationRevision;
  try{
+  if(!full){
+   if(!activeDocument)return;
+   const id=activeDocument.id;
+   const rows=await api.table('sw_annotations','document_id=eq.'+id+'&select=*&order=created_at.asc');
+   if(token!==epoch)return;
+   if(dialogOpen||finishPick||areaSession||revision!==annotationRevision){pendingSync.add('annotations');return;}
+   annotations=rows;
+   refreshList();
+   status(tr('Sincronizzato'));
+   return;
+  }
+  lastSafetyCheck=Date.now();
   const [mine]=await api.table('sw_profiles','id=eq.'+user.id+'&select=*');
   if(token!==epoch)return;
   const wasApproved=profile?.approved;profile=mine;applyRole();
   if(!mine?.approved){dismissNoteSession();epoch++;await clearShipSetup();project=null;projectLevel=null;activeDocument=null;annotations=[];projects=[];viewer.clear();await pdf?.destroy();pdf=null;screen('waiting');return;}
   if(!wasApproved){await restore();return;}
   if(activeDocument&&(dialogOpen||finishPick||areaSession)){
+   pendingSync.add('annotations');
    const level=await api.rpc('sw_project_level',{target:project.id});
    if(token!==epoch)return;
    if(!level){dismissNoteSession();await showProjects();toast(tr('Accesso al progetto revocato.'));return;}
@@ -874,11 +918,15 @@ async function syncVisible(){
    if(token!==epoch)return;
    if(!level){await showProjects();toast(tr('Accesso al progetto revocato.'));return;}
    if(!updated){await enterProject(project);return;}
-   if(!dialogOpen&&!finishPick){projectLevel=level;activeDocument=updated;annotations=rows;refreshList();status(tr('Sincronizzato'));}
+   if(!dialogOpen&&!finishPick&&!areaSession){projectLevel=level;activeDocument=updated;if(revision===annotationRevision)annotations=rows;else pendingSync.add('annotations');refreshList();status(tr('Sincronizzato'));}
+   else pendingSync.add('annotations');
   }
- }catch(e){status(tr('Riconnessione…'));}finally{polling=false;}
+ }catch(e){lastSafetyCheck=0;status(tr('Riconnessione…'));}finally{polling=false;if(!(dialogOpen||finishPick||areaSession)||pendingSync.has('all'))scheduleRefresh();}
 }
-setInterval(syncVisible,10000);
+setInterval(()=>{
+ if(document.hidden||!api.getSession())return;
+ if(!realtimeConnected||Date.now()-lastSafetyCheck>=60000)queueRefresh();
+},15000+Math.floor(Math.random()*5000));
 window.addEventListener('online',queueRefresh);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)queueRefresh();});
 window.addEventListener('offline',()=>toast(tr('Connessione assente. Le nuove modifiche richiedono Internet.')));

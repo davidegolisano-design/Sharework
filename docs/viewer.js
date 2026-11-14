@@ -1,9 +1,9 @@
 import * as pdfjs from './vendor/build/pdf.mjs';
-import {normalized,segmentDistance,contrast,clamp,annotationStrokes,expandOverlappingMarkers} from './model.js?v=b6fd6f6b8684';
+import {normalized,segmentDistance,contrast,clamp,annotationStrokes,expandOverlappingMarkers} from './model.js?v=42e4a44c62cb';
 pdfjs.GlobalWorkerOptions.workerSrc=new URL('./vendor/build/pdf.worker.mjs',import.meta.url).href;
 const vendor=new URL('./vendor/',import.meta.url).href;
 export async function loadPdf(data){return pdfjs.getDocument({data,cMapUrl:vendor+'cmaps/',cMapPacked:true,standardFontDataUrl:vendor+'standard_fonts/',wasmUrl:vendor+'wasm/',iccUrl:vendor+'iccs/',isEvalSupported:false}).promise;}
-import {emojiSymbols} from './ship-model.js?v=b6fd6f6b8684';
+import {emojiSymbols} from './ship-model.js?v=42e4a44c62cb';
 const highlightPath=new Path2D('M 5 16 L 15 4 L 21 9 L 11 21 H 3 Z');
 const markerRadius=14;
 // Use the part of the viewport covered by the sheet, including height-fitted overviews.

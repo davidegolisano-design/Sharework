@@ -4,12 +4,17 @@ test('Realtime authenticated subscription, event delivery, token rotation and st
  class Socket{constructor(){this.readyState=1;this.sent=[];instances.push(this);}send(s){this.sent.push(JSON.parse(s));}close(){this.readyState=3;this.onclose?.();}}
  const ctx=vm.createContext({WebSocket:Socket,SUPABASE_URL:'https://example.test',SUPABASE_KEY:'public',getSession:()=>session,setInterval:fn=>(interval=fn,1),clearInterval:()=>{},setTimeout:fn=>(timeout=fn,1),clearTimeout:()=>{},encodeURIComponent});
  const source=(await readFile('src/realtime.js','utf8')).replace(/^import .*;\n/gm,'').replace('export function','function');vm.runInContext(source,ctx);
- const stop=ctx.watchChanges(()=>updates++),socket=instances[0];socket.onopen();
+ const connection=[];
+ const stop=ctx.watchChanges(()=>updates++,ready=>connection.push(ready)),socket=instances[0];socket.onopen();
  assert.equal(socket.sent[0].payload.access_token,'first');assert.equal(socket.sent[0].payload.config.postgres_changes.length,4);
- socket.onmessage({data:JSON.stringify({event:'postgres_changes',payload:{}})});assert.equal(updates,1);
+ socket.onmessage({data:JSON.stringify({event:'phx_reply',topic:'realtime:sharework',ref:socket.sent[0].ref,payload:{status:'ok'}})});
+ assert.deepEqual(connection,[true]);assert.equal(updates,1);
+ socket.onmessage({data:JSON.stringify({event:'postgres_changes',payload:{}})});assert.equal(updates,2);
  session={access_token:'renewed'};interval();assert.equal(socket.sent.at(-2).event,'access_token');assert.equal(socket.sent.at(-2).payload.access_token,'renewed');
  socket.onmessage({data:JSON.stringify({event:'phx_reply',topic:'phoenix'})});interval();assert.equal(socket.readyState,1);
- stop();assert.equal(socket.readyState,3);assert.equal(timeout,undefined);
+ socket.onmessage({data:JSON.stringify({event:'phx_reply',topic:'realtime:sharework',ref:'other',payload:{status:'error'}})});
+ assert.equal(socket.readyState,1);
+ stop();assert.equal(socket.readyState,3);
 });
 test('PWA assets resolve under GitHub repository path',async()=>{
  const manifest=JSON.parse(await readFile('src/manifest.webmanifest','utf8'));
