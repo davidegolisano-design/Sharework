@@ -1,8 +1,10 @@
+import {workState,workStates,workTypes} from './work-schedule.js';
 import writeExcelFile from './vendor/workbook.js';
 import {frameAt,workDecks,workFrameRange} from './ship-model.js';
 
 export async function exportWorks(annotations,plan,name,pageName,tr,locale){
- const headers=['Numero','Titolo','Descrizione','Ponte di origine','Ponti coinvolti','Frame del simbolo','Frame iniziale','Frame finale','Autore','Data'];
+ const headers=['Numero','Titolo','Descrizione','Ponte di origine','Ponti coinvolti','Frame del simbolo','Frame iniziale','Frame finale','Autore','Data','Tipologia lavoro','Stato','Inizio previsto','Fine prevista'];
+ const states=new Map(workStates),types=new Map(workTypes),now=Date.now();
  const deckOrder=new Map((plan?.decks||[]).map((deck,i)=>[deck.page,i]));
  const rows=annotations.filter(note=>!note.deleted).sort((a,b)=>(deckOrder.get(a.page)??a.page)-(deckOrder.get(b.page)??b.page)||a.number-b.number).map(note=>{
   const sheet=plan?.decks.find(deck=>deck.page===note.page);
@@ -10,10 +12,11 @@ export async function exportWorks(annotations,plan,name,pageName,tr,locale){
   return [note.number,note.title,note.description,pageName(note.page),
    workDecks(plan,note).map(deck=>deck.name).join(', ')||pageName(note.page),
    frameAt(sheet,note.x),start,end,note.author_name,
-   new Date(note.created_at).toLocaleString(locale)];
+   new Date(note.created_at).toLocaleString(locale),tr(types.get(note.work_type)||'Non specificata'),tr(states.get(workState(note,now))),
+   ...[note.work_start,note.work_end].map(value=>value?new Date(value).toLocaleString(locale):'')];
  });
  const workbook=writeExcelFile([headers.map(label=>({value:tr(label),fontWeight:'bold'})),...rows],{
-  sheet:tr('Lavori'),columns:[10,28,44,20,32,17,17,17,22,22].map(width=>({width}))
+  sheet:tr('Lavori'),columns:[10,28,44,20,32,17,17,17,22,22,20,18,22,22].map(width=>({width}))
  });
  const fileName=(name||tr('Lavori')).replace(/[\\/:*?"<>|]/g,'-')+' - '+tr('Lavori')+'.xlsx';
  if(navigator.userAgent.includes('ShareworkAndroid/10')){

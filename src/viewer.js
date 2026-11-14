@@ -223,16 +223,21 @@ export class Viewer{
  const marks=this.marks.filter(a=>a.page===this.pageNumber&&!a.deleted);
  for(const a of marks){
   if(a.id===this.areaDraft?.id)continue;
-  this.drawRegions(ov,r,a.regions,a.color);
+  const muted=a.effectiveStatus&&a.effectiveStatus!=='started';
+  const color=muted?'#8793a1':a.color;
+  this.drawRegions(ov,r,a.regions,color,true,muted?.55:1);
   for(const stroke of annotationStrokes(a)){
    const {width,pixels}=highlightGeometry(a,r,stroke);
-   this.strokeLine(ov,pixels,a.color,width,a.opacity);
+   this.strokeLine(ov,pixels,color,width,a.opacity*(muted?.55:1));
   }
  }
  for(const a of marks){
   if(a.id===this.areaDraft?.id)continue;
   const [x,y]=markPosition(a,r);
+  ov.save();
+  if(a.effectiveStatus&&a.effectiveStatus!=='started'){ov.filter='grayscale(1)';ov.globalAlpha=.52;}
   marker(ov,x,y,a.color,a.shape,a.number);
+  ov.restore();
  }
  if(this.areaDraft){
   const {regions,vertices,color}=this.areaDraft;
@@ -258,7 +263,7 @@ export class Viewer{
  }
  ov.restore();
  if(render){this.revision++;clearTimeout(this.timer);this.timer=setTimeout(()=>this.renderDetail(),100);}}
- drawRegions(ctx,rect,regions,color,merge=true){
+ drawRegions(ctx,rect,regions,color,merge=true,alpha=1){
   const polygons=merge?unionRegions(regions):regions.map(ring=>[ring]);
   if(!polygons.length)return;
   ctx.save();ctx.beginPath();
@@ -267,8 +272,8 @@ export class Viewer{
    ctx.moveTo(...pixels[0]);for(const point of pixels.slice(1))ctx.lineTo(...point);
    ctx.closePath();
   }
-  ctx.fillStyle=ctx.strokeStyle=color;ctx.globalAlpha=.22;ctx.fill('evenodd');
-  ctx.globalAlpha=1;ctx.lineWidth=2;ctx.setLineDash([7,5]);ctx.stroke();ctx.restore();
+  ctx.fillStyle=ctx.strokeStyle=color;ctx.globalAlpha=.22*alpha;ctx.fill('evenodd');
+  ctx.globalAlpha=alpha;ctx.lineWidth=2;ctx.setLineDash([7,5]);ctx.stroke();ctx.restore();
  }
  strokeLine(ctx,points,color,width,opacity){
   if(!points.length)return;

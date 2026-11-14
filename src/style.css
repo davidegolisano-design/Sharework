@@ -236,3 +236,14 @@ dialog textarea{min-height:85px}
 .user-actions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
 .user-actions button,.user-actions select{min-height:36px;padding:5px 7px;font-size:12px}
 @media (max-width:560px){.people-list .user-row{display:grid;grid-template-columns:minmax(0,1fr)}.user-actions{justify-content:flex-start}}
+
+.filters-active #viewport,.filters-active #notes-panel{outline:2px solid #be3037;outline-offset:-2px}
+.filtered-plan-label{position:absolute;z-index:2;top:6px;left:7px;background:#fff5f5;color:#982328;border:1px solid #be3037;border-radius:4px;padding:3px 7px;font-size:11px;pointer-events:none}
+.work-badge{display:inline-block;margin:4px 0 0;padding:2px 5px;border-radius:4px;background:#e9ecf0;color:#435060;font-size:11px}
+.work-started{background:#dff1e6;color:#245738}
+.work-paused{background:#f4ecdf;color:#6d512a}
+.work-muted{filter:grayscale(1);opacity:.62}
+.work-scheduling{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 8px}
+.work-scheduling input,.work-scheduling select{min-width:0}
+.work-schedule-state{grid-column:1/-1;margin:2px 0;font-size:12px}
+@media(max-width:390px){.work-scheduling{grid-template-columns:1fr}}

@@ -110,3 +110,13 @@ test('Note search highlights the original spelling and combining accents',()=>{
  const note={title,shape:'welding'};
  assert.deepEqual(filterNotes([note],{query:'jose',kind:'welding'}),[note]);
 });
+
+test('Work schedule applies only until its end and manual status takes priority',async()=>{
+ const {workState}=await import('../src/work-schedule.js');
+ const note={work_start:'2026-11-14T08:00:00Z',work_end:'2026-11-14T10:00:00Z',work_status:null};
+ assert.equal(workState(note,Date.parse('2026-11-14T07:00Z')),'pending');
+ assert.equal(workState(note,Date.parse('2026-11-14T09:00Z')),'started');
+ assert.equal(workState(note,Date.parse('2026-11-14T10:00Z')),'pending');
+ assert.equal(workState({...note,work_status:'paused'},Date.parse('2026-11-14T09:00Z')),'paused');
+ assert.equal(workState({...note,work_status:'completed'},Date.parse('2026-11-14T09:00Z')),'completed');
+});

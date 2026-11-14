@@ -16,13 +16,13 @@
 <button id="area-pan" type="button" aria-pressed="false">Sposta tavola</button>
 <button id="area-undo" type="button">Annulla ultimo disegno</button><button id="area-clear" type="button">Svuota area</button>
 <button id="area-save" type="button" class="primary">Salva area</button><button id="area-cancel" type="button">Annulla selezione</button>
-</div><div id="workspace-body"><div id="viewport"><canvas id="pdf-canvas"></canvas><canvas id="marks-canvas"></canvas></div><div id="divider" role="separator" aria-label="Ridimensiona pannello note" aria-orientation="vertical" tabindex="0"><button id="panel-toggle" aria-label="Chiudi pannello note">▸</button></div><aside id="notes-panel"><header class="notes-header"><h2 id="document-title"></h2><button id="notes-close" type="button" aria-label="Chiudi pannello note">×</button></header><div class="notes-search">
+</div><div id="workspace-body"><div id="viewport"><span class="filtered-plan-label" hidden>Filtri attivi</span><canvas id="pdf-canvas"></canvas><canvas id="marks-canvas"></canvas></div><div id="divider" role="separator" aria-label="Ridimensiona pannello note" aria-orientation="vertical" tabindex="0"><button id="panel-toggle" aria-label="Chiudi pannello note">▸</button></div><aside id="notes-panel"><header class="notes-header"><h2 id="document-title"></h2><button id="notes-close" type="button" aria-label="Chiudi pannello note">×</button></header><div class="notes-search">
 <input id="notes-query" type="search" placeholder="Cerca nelle note…" aria-label="Cerca nelle note">
 <details id="note-filters"><summary>Filtri</summary>
 <div class="notes-filters">
 <label>Mostra note<select id="notes-scope"></select></label>
 <label>Pagina o ponte<select id="notes-page"></select></label>
-<label>Simbolo<select id="notes-kind"></select></label>
+<label>Simbolo<select id="notes-kind"></select></label><label>Tipologia lavoro<select id="notes-work-type"></select></label><label>Stato<select id="notes-work-status"></select></label>
 <label>Autore<select id="notes-author"></select></label>
 <label>Data<input id="notes-day" type="date"></label>
 <button id="notes-reset" type="button">Azzera filtri</button>
