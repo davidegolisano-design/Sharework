@@ -1,5 +1,5 @@
-import {workState} from './work-schedule.js?v=2a96e4f38bd2';
-import {annotationStrokes,normalizeSearch} from './model.js?v=2a96e4f38bd2';
+import {workState} from './work-schedule.js?v=f96817ccc7d6';
+import {annotationStrokes,normalizeSearch} from './model.js?v=f96817ccc7d6';
 export const geometricSymbols={circle:'●',square:'■',diamond:'◆',triangle:'▲'};
 const defaultCategories=[
  ['circle','●','Punto'],['square','■','Quadrato'],['diamond','◆','Rombo'],['triangle','▲','Triangolo'],

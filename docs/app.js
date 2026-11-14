@@ -1,13 +1,13 @@
-import {workStates,workState,localDateTime} from './work-schedule.js?v=2a96e4f38bd2';
-import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=2a96e4f38bd2';
-import {projectCover} from './cards.js?v=2a96e4f38bd2';
-import {watchChanges} from './realtime.js?v=2a96e4f38bd2';
-import * as api from './api.js?v=2a96e4f38bd2';
-import {Viewer,loadPdf,marker,drawLaser} from './viewer.js?v=2a96e4f38bd2';
-import {snapshot,grouped,clamp,annotationStrokes,normalizeSearch,searchRanges} from './model.js?v=2a96e4f38bd2';
-import {filterNotes,noteShapes,noteCategory,geometricSymbols,workCategories,setWorkCatalog,categoryLabel,isArchivedSymbol,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js?v=2a96e4f38bd2';
-import {finishRegion,legacyRegions} from './work-regions.js?v=2a96e4f38bd2';
-import {editShipPlan} from './ship-editor.js?v=2a96e4f38bd2';
+import {workStates,workState,localDateTime} from './work-schedule.js?v=f96817ccc7d6';
+import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=f96817ccc7d6';
+import {projectCover} from './cards.js?v=f96817ccc7d6';
+import {watchChanges} from './realtime.js?v=f96817ccc7d6';
+import * as api from './api.js?v=f96817ccc7d6';
+import {Viewer,loadPdf,marker,drawLaser} from './viewer.js?v=f96817ccc7d6';
+import {snapshot,grouped,clamp,annotationStrokes,normalizeSearch,searchRanges} from './model.js?v=f96817ccc7d6';
+import {filterNotes,noteShapes,noteCategory,geometricSymbols,workCategories,setWorkCatalog,categoryLabel,isArchivedSymbol,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,deckReferences,frameAt,workFrameRange,placeLaser,laserOnPage} from './ship-model.js?v=f96817ccc7d6';
+import {finishRegion,legacyRegions} from './work-regions.js?v=f96817ccc7d6';
+import {editShipPlan} from './ship-editor.js?v=f96817ccc7d6';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
 let stopRealtime=null,refreshTimer,realtimeConnected=false,lastSafetyCheck=0,annotationRevision=0;
 const pendingSync=new Set();
@@ -84,6 +84,7 @@ async function startShipSetup(doc,previousPlan){
  }finally{setupLoading=false;}
 }
 try{Object.assign(viewer.settings,JSON.parse(localStorage.getItem('sw.tools')||'{}'));}catch{}
+if(viewer.settings.note)delete viewer.settings.note.custom_category;
 const text=(tag,value,cls)=>{const el=document.createElement(tag);el.textContent=value;if(cls)el.className=cls;return el;};
 function highlightMatch(element,value,query){
  const ranges=searchRanges(value,query);
@@ -607,7 +608,7 @@ $('print-view').onclick=()=>{
    for(const item of choices.querySelectorAll('button'))item.disabled=true;
    message.textContent=tr('Preparazione PDF…');
    try{
-    const {printPlan}=await import('./plan-print.js?v=2a96e4f38bd2');
+    const {printPlan}=await import('./plan-print.js?v=f96817ccc7d6');
     const base=printPage.getViewport({scale:1});
     const scale=1200/Math.max(base.width,base.height);
     const full={x:0,y:0,w:base.width*scale,h:base.height*scale,scale};
@@ -638,7 +639,7 @@ $('export-works').onclick=async()=>{
  const name=page=>configuration?.decks.find(deck=>deck.page===page)?.name||tr('Pagina')+' '+page;
  button.disabled=true;
  try{
-  const {exportWorks}=await import('./work-export.js?v=2a96e4f38bd2');
+  const {exportWorks}=await import('./work-export.js?v=f96817ccc7d6');
   if(canExportWorks()&&!$('workspace').hidden)await exportWorks(works,configuration,title,name,tr,locale());
  }catch(error){report(error);}
  finally{button.disabled=false;}
@@ -1153,32 +1154,34 @@ async function toolSettings(existing=null){
  const hasArea=hasRegion||Boolean(existing&&annotationStrokes(existing).length);
  const box=modal(tr(existing?.kind==='highlight'?'Impostazioni evidenziatore':'Impostazioni nota'));
  const canvas=document.createElement('canvas');
- canvas.className='settings-preview';canvas.width=430;canvas.height=65;
+ canvas.className='settings-preview';
  box.append(canvas);
  const color=field(box,tr('Colore'),{type:'color',value:choice.color});
- const customCategory=field(box,tr('Nome categoria'),{value:choice.custom_category||''});
- customCategory.maxLength=60;
  const categoryHint=text('p','','work-schedule-state');
  box.append(categoryHint);
  const options=text('div','','symbol-picker');
 
  function preview(){
+  const {clientWidth:width,clientHeight:height}=canvas;
+  if(!width||!height)return;
+  const ratio=devicePixelRatio||1;
+  canvas.width=Math.round(width*ratio);canvas.height=Math.round(height*ratio);
   const ctx=canvas.getContext('2d');
-  ctx.clearRect(0,0,430,65);
+  ctx.setTransform(ratio,0,0,ratio,0,0);
+  const inset=Math.min(40,width*.12);
   if(hasRegion){
-   viewer.drawRegions(ctx,{x:40,y:14,w:350,h:36},[[[0,0],[1,0],[1,1],[0,1]]],choice.color,false);
+   viewer.drawRegions(ctx,{x:inset,y:14,w:width-2*inset,h:height-29},[[[0,0],[1,0],[1,1],[0,1]]],choice.color,false);
   }else if(hasArea){
    ctx.strokeStyle=choice.color;ctx.globalAlpha=choice.opacity/100;
    ctx.lineWidth=choice.width;ctx.lineCap='round';
-   ctx.beginPath();ctx.moveTo(40,32);ctx.lineTo(390,32);ctx.stroke();
+   ctx.beginPath();ctx.moveTo(inset,height/2);ctx.lineTo(width-inset,height/2);ctx.stroke();
    ctx.globalAlpha=1;
   }
-  marker(ctx,215,32,choice.color,choice.shape,existing?.number||1);
+  marker(ctx,width/2,height/2,choice.color,choice.shape,existing?.number||1);
  }
 
  function updateSymbol(){
-  customCategory.parentElement.hidden=!geometricSymbols[choice.shape];
-  const category=noteCategory({...choice,custom_category:customCategory.value});
+  const category=noteCategory(choice);
   categoryHint.textContent=category?categoryText(category):'';
   color.parentElement.hidden=!hasArea&&Boolean(emojiSymbols[choice.shape]);
   for(const button of options.children){
@@ -1189,7 +1192,6 @@ async function toolSettings(existing=null){
   preview();
  }
 
- customCategory.oninput=updateSymbol;
  color.oninput=()=>{choice.color=color.value;preview();};
  for(const [shape,label,custom] of noteShapes){
   if(isArchivedSymbol(shape)&&shape!==existing?.shape)continue;
@@ -1220,9 +1222,13 @@ async function toolSettings(existing=null){
    preview();
   };
  }
+ const resizePreview=new ResizeObserver(preview);
+ resizePreview.observe(canvas);
+ appDialog.addEventListener('close',()=>resizePreview.disconnect(),{once:true});
  updateSymbol();
  $('dialog-footer').append(btn(tr('Applica'),async()=>{
-  const changes={shape:choice.shape,custom_category:geometricSymbols[choice.shape]?customCategory.value.trim()||null:null};
+  const changes={shape:choice.shape};
+  if(existing&&!geometricSymbols[choice.shape])changes.custom_category=null;
   if(hasArea||!emojiSymbols[choice.shape])changes.color=choice.color;
   if(hasArea&&!hasRegion){changes.width=choice.width;changes.opacity=choice.opacity;}
   if(existing){

@@ -1,6 +1,6 @@
-import {workState,workStates} from './work-schedule.js?v=2a96e4f38bd2';
+import {workState,workStates} from './work-schedule.js?v=f96817ccc7d6';
 import writeExcelFile from './vendor/workbook.js';
-import {frameAt,workDecks,workFrameRange,noteShapes,noteCategory,categoryLabel} from './ship-model.js?v=2a96e4f38bd2';
+import {frameAt,workDecks,workFrameRange,noteShapes,noteCategory,categoryLabel} from './ship-model.js?v=f96817ccc7d6';
 
 export async function exportWorks(annotations,plan,name,pageName,tr,locale){
  const headers=['Numero','Titolo','Descrizione','Ponte di origine','Ponti coinvolti','Frame del simbolo','Frame iniziale','Frame finale','Autore','Data','Simbolo','Categoria','Stato','Inizio previsto','Fine prevista'];
