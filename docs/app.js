@@ -1,14 +1,16 @@
-import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=29405451f96d';
-import {projectCover} from './cards.js?v=29405451f96d';
-import {watchChanges} from './realtime.js?v=29405451f96d';
-import * as api from './api.js?v=29405451f96d';
-import {Viewer,loadPdf,marker} from './viewer.js?v=29405451f96d';
-import {snapshot,grouped,clamp,annotationStrokes} from './model.js?v=29405451f96d';
-import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,placeLaser,laserOnPage} from './ship-model.js?v=29405451f96d';
-import {editShipPlan} from './ship-editor.js?v=29405451f96d';
+import {tr, locale, setLanguage, registerStatic, translateStatic} from './locale.js?v=bfb6ea092bba';
+import {projectCover} from './cards.js?v=bfb6ea092bba';
+import {watchChanges} from './realtime.js?v=bfb6ea092bba';
+import * as api from './api.js?v=bfb6ea092bba';
+import {Viewer,loadPdf,marker} from './viewer.js?v=bfb6ea092bba';
+import {snapshot,grouped,clamp,annotationStrokes} from './model.js?v=bfb6ea092bba';
+import {filterNotes,noteShapes,projectMarks,shipPageOrder,emojiSymbols,longitudinalScale,mapDeckView,placeLaser,laserOnPage} from './ship-model.js?v=bfb6ea092bba';
+import {editShipPlan} from './ship-editor.js?v=bfb6ea092bba';
 const $=id=>document.getElementById(id),screens=['auth','waiting','projects','documents','workspace','ship-setup'];
 let stopRealtime=null,refreshTimer,realtimeConnected=false,lastSafetyCheck=0,annotationRevision=0;
 const pendingSync=new Set();
+const idleLimit=30*60*1000,idleKey='sharework.lastActivity';
+let idleTimer;
 let user,profile,projects=[],project,projectLevel,activeDocument,annotations=[],pdf,authMode='login',dialogClose=null,dialogOpen=false,polling=false,epoch=0;
 let all=localStorage.getItem('sw.all')==='true',panelWidth=Number(localStorage.getItem('sw.panelWidth'))||290,panelHidden=false,undo=[],redo=[],loading=false;
 const roles = {super_admin:'Super admin', admin:'Admin', member:'Utente', viewer:'Visualizzatore'};
@@ -83,13 +85,102 @@ $('dialog-close').onclick=()=>closeModal().catch(report);$('dialog').addEventLis
 function field(parent,title,{value='',type='text',multiline=false,min,max,step}={}){const label=text('label',title),input=document.createElement(multiline?'textarea':'input');if(!multiline)input.type=type;input.value=value;if(min!==undefined)input.min=min;if(max!==undefined)input.max=max;if(step!==undefined)input.step=step;label.append(input);parent.append(label);return input;}
 function setAuthMode(value){authMode=value;$('name-field').hidden=value!=='signup';$('full-name').required=value==='signup';$('signup-hint').hidden=value!=='signup';$('password').autocomplete=value==='signup'?'new-password':'current-password';$('auth-title').textContent=tr(value==='signup'?'Crea il tuo account':'Accedi al tuo spazio');$('auth-submit').textContent=tr(value==='signup'?'Registrati →':'Accedi →');$('login-tab').classList.toggle('selected',value==='login');$('signup-tab').classList.toggle('selected',value==='signup');$('auth-error').textContent='';}
 $('login-tab').onclick=()=>setAuthMode('login');$('signup-tab').onclick=()=>setAuthMode('signup');
-$('auth-form').onsubmit=async e=>{e.preventDefault();$('auth-submit').disabled=true;$('auth-error').textContent='';try{if(authMode==='signup'){await api.signUp($('email').value.trim(),$('password').value,$('full-name').value.trim());if(!api.getSession()){$('auth-error').textContent=tr('Cerca l’email di conferma da Sharework Registration. Controlla anche la posta indesiderata. Dopo la conferma, accedi per verificare l’approvazione.');$('password').value='';return;}}else await api.signIn($('email').value.trim(),$('password').value);$('password').value='';await restore();}catch(e){$('auth-error').textContent=tr(e.message);}finally{$('auth-submit').disabled=false;}};
+$('auth-form').onsubmit=async e=>{e.preventDefault();$('auth-submit').disabled=true;$('auth-error').textContent='';try{if(authMode==='signup'){await api.signUp($('email').value.trim(),$('password').value,$('full-name').value.trim());if(!api.getSession()){$('auth-error').textContent=tr('Cerca l’email di conferma da Sharework Registration. Controlla anche la posta indesiderata. Dopo la conferma, accedi per verificare l’approvazione.');$('password').value='';return;}}else await api.signIn($('email').value.trim(),$('password').value);$('password').value='';startIdleSession();await restore();}catch(e){$('auth-error').textContent=tr(e.message);}finally{$('auth-submit').disabled=false;}};
 $('reset-password').onclick=async()=>{const email=$('email').value.trim();if(!email||!$('email').checkValidity()){toast(tr('Inserisci la tua email.'));return;}try{await api.request('/auth/v1/recover?redirect_to='+encodeURIComponent(location.origin+location.pathname),{method:'POST',body:{email},anonymous:true});$('auth-error').textContent=tr('Se l’account esiste, riceverai il link di recupero da Sharework Registration. Controlla anche la posta indesiderata.');}catch(e){report(e);}};
-async function restore(){if(!api.getSession()){stopRealtime?.();stopRealtime=null;screen('auth');return;}try{user=await api.request('/auth/v1/user');const rows=await api.table('sw_profiles','id=eq.'+user.id+'&select=*');profile=rows[0];stopRealtime?.();realtimeConnected=false;stopRealtime=watchChanges(onRealtimeChange,connected=>{realtimeConnected=connected;if(!connected)queueRefresh();});if(!profile)throw Error(tr('Profilo non disponibile. La configurazione del database deve essere completata.'));if(!profile.approved){screen('waiting');return;}document.querySelectorAll('.user-name').forEach(el=>el.textContent=profile.full_name);applyRole();await showProjects();}catch(e){screen('auth');$('auth-error').textContent=tr(e.message);}}
-async function logout(){cancelPick();if(dialogOpen&&!await tryClose())return;stopRealtime?.();stopRealtime=null;epoch++;await clearShipSetup();project=null;projectLevel=null;activeDocument=null;viewer.clear();await pdf?.destroy();pdf=null;await api.signOut();profile=user=null;annotations=[];projects=[];screen('auth');}
+async function restore(){
+ if(!api.getSession()){stopRealtime?.();stopRealtime=null;screen('auth');return;}
+ const token=epoch;
+ try{
+  const current=await api.request('/auth/v1/user');
+  if(token!==epoch)return;
+  const rows=await api.table('sw_profiles','id=eq.'+current.id+'&select=*');
+  if(token!==epoch)return;
+  user=current;
+  profile=rows[0];
+  stopRealtime?.();realtimeConnected=false;
+  stopRealtime=watchChanges(onRealtimeChange,connected=>{realtimeConnected=connected;if(!connected)queueRefresh();});
+  if(!profile)throw Error(tr('Profilo non disponibile. La configurazione del database deve essere completata.'));
+  if(!profile.approved){screen('waiting');return;}
+  document.querySelectorAll('.user-name').forEach(el=>el.textContent=profile.full_name);applyRole();
+  await showProjects();
+ }catch(e){if(api.getSession()){screen('auth');$('auth-error').textContent=tr(e.message);}}
+}
+
+async function logout({idle=false,signedOutElsewhere=false}={}){
+ let revocation;
+ if(signedOutElsewhere)api.setSession(null);
+ else if(idle)revocation=api.signOut({idle:true}).catch(()=>{});
+ else{
+  cancelPick();
+  if(dialogOpen&&!await tryClose())return;
+  await api.signOut().catch(report);
+ }
+ stopRealtime?.();stopRealtime=null;realtimeConnected=false;
+ clearTimeout(idleTimer);clearTimeout(refreshTimer);refreshTimer=null;pendingSync.clear();
+ epoch++;
+ dismissNoteSession();
+ const setupClosed=clearShipSetup(), oldPdf=pdf;
+ pdf=null;project=null;projectLevel=null;activeDocument=null;profile=user=null;
+ annotations=[];projects=[];undo=[];redo=[];
+ viewer.clear();
+ setAuthMode('login');
+ if(idle)$('auth-error').textContent=tr('Sessione terminata per inattività. Accedi di nuovo.');
+ screen('auth');
+ await Promise.all([setupClosed,oldPdf?.destroy(),revocation]);
+}
+
+function checkInactivity(){
+ clearTimeout(idleTimer);
+ if(!api.getSession())return false;
+ const now=Date.now();
+ const last=Number(localStorage.getItem(idleKey))||now;
+ if(!localStorage.getItem(idleKey))localStorage.setItem(idleKey,String(last));
+ const remaining=idleLimit-Math.max(0,now-last);
+ if(remaining<=0){void logout({idle:true}).catch(report);return false;}
+ idleTimer=setTimeout(checkInactivity,remaining);
+ return true;
+}
+
+function startIdleSession(){
+ localStorage.setItem(idleKey,String(Date.now()));
+ checkInactivity();
+}
+
+function recordActivity(event){
+ if(!event.isTrusted||document.hidden||!api.getSession())return;
+ if(event.type==='pointermove'&&!event.buttons)return;
+ const now=Date.now(),last=Number(localStorage.getItem(idleKey));
+ if(now-last>=idleLimit&&last){checkInactivity();return;}
+ if(now-last>=1000)localStorage.setItem(idleKey,String(now));
+}
+
+for(const type of ['pointerdown','pointermove','keydown','wheel','input','scroll']){
+ window.addEventListener(type,recordActivity,{capture:true,passive:true});
+}
+window.addEventListener('storage',event=>{
+ if(event.key===idleKey)checkInactivity();
+ if(event.key===api.SESSION&&!event.newValue&&api.getSession()){
+  const idle=Date.now()-Number(localStorage.getItem(idleKey))>=idleLimit;
+  void logout({idle,signedOutElsewhere:true}).catch(report);
+ }
+});
+window.addEventListener('pageshow',checkInactivity);
+
 async function tryClose(){await closeModal();return !dialogOpen;}
 document.querySelectorAll('.logout').forEach(b=>b.onclick=()=>logout().catch(report));$('check-approval').onclick=()=>restore().catch(report);
-async function showProjects(){epoch++;await clearShipSetup();project=null;projectLevel=null;activeDocument=null;viewer.clear();await pdf?.destroy();pdf=null;undo=[];redo=[];screen('projects');$('project-list').replaceChildren(text('div',tr('Caricamento…'),'empty'));projects=await api.table('sw_projects','select=*&order=created_at.desc');renderProjects();}
+async function showProjects(){
+ const token=++epoch;
+ await clearShipSetup();
+ if(token!==epoch)return;
+ project=null;projectLevel=null;activeDocument=null;viewer.clear();
+ await pdf?.destroy();
+ if(token!==epoch)return;
+ pdf=null;undo=[];redo=[];screen('projects');
+ $('project-list').replaceChildren(text('div',tr('Caricamento…'),'empty'));
+ const rows=await api.table('sw_projects','select=*&order=created_at.desc');
+ if(token!==epoch)return;
+ projects=rows;renderProjects();
+}
 function projectPeriod(p){
  if(!p.start_date||!p.end_date)return tr('Periodo da definire');
  const format=value=>new Intl.DateTimeFormat(locale(),{dateStyle:'short',timeZone:'UTC'}).format(new Date(value+'T00:00:00Z'));
@@ -872,7 +963,7 @@ function onRealtimeChange(change){
  }else if(change.table==='sw_projects'&&!$('projects').hidden)queueRefresh();
 }
 async function syncVisible(){
- if(document.hidden||!api.getSession()||!user||!pendingSync.size)return;
+ if(document.hidden||!api.getSession()||!user||!pendingSync.size||!checkInactivity())return;
  if(polling||loading||setupLoading){scheduleRefresh();return;}
  const busy=dialogOpen||finishPick||areaSession;
  const full=pendingSync.has('all');
@@ -927,8 +1018,8 @@ setInterval(()=>{
  if(document.hidden||!api.getSession())return;
  if(!realtimeConnected||Date.now()-lastSafetyCheck>=60000)queueRefresh();
 },15000+Math.floor(Math.random()*5000));
-window.addEventListener('online',queueRefresh);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)queueRefresh();});
+window.addEventListener('online',()=>{if(!document.hidden&&checkInactivity())queueRefresh();});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&checkInactivity())queueRefresh();});
 window.addEventListener('offline',()=>toast(tr('Connessione assente. Le nuove modifiche richiedono Internet.')));
 registerStatic();
 translateStatic();
@@ -942,4 +1033,4 @@ $('language').onchange=()=>{
  if(!$('workspace').hidden){refreshList();status('');}
 };
 window.addEventListener('beforeunload',e=>{if(dialogOpen||areaSession){e.preventDefault();e.returnValue='';}});
-try{const callback=api.authCallback();if(callback==='recovery'){screen('auth');const box=modal(tr('Nuova password')),password=field(box,tr('Password (almeno 10 caratteri)'),{type:'password'});$('dialog-footer').append(btn(tr('Aggiorna'),async()=>{if(password.value.length<10)throw Error(tr('Usa almeno 10 caratteri.'));await api.request('/auth/v1/user',{method:'PUT',body:{password:password.value}});await closeModal();await restore();},'primary'));}else await restore();}catch(e){$('auth-error').textContent=tr(e.message);}
+try{const callback=api.authCallback();if(callback)startIdleSession();if(callback==='recovery'){screen('auth');const box=modal(tr('Nuova password')),password=field(box,tr('Password (almeno 10 caratteri)'),{type:'password'});$('dialog-footer').append(btn(tr('Aggiorna'),async()=>{if(password.value.length<10)throw Error(tr('Usa almeno 10 caratteri.'));await api.request('/auth/v1/user',{method:'PUT',body:{password:password.value}});await closeModal();await restore();},'primary'));}else if(checkInactivity()||!api.getSession())await restore();}catch(e){$('auth-error').textContent=tr(e.message);}

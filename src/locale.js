@@ -1,4 +1,5 @@
 const english = {
+ "Sessione terminata per inattività. Accedi di nuovo.":"You were signed out due to inactivity. Sign in again.",
  "Evidenzia area":"Highlight area",
  "Modifica area":"Edit area",
  "Disegna uno o più tratti sulla pianta":"Draw one or more strokes on the deck plan",
