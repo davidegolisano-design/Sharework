@@ -1,4 +1,9 @@
 const english = {
+ "Salva":"Save",
+ "Cambia nome":"Rename",
+ "Cerca per nome o email…":"Search by name or email…",
+ "Inserisci un nome da 2 a 120 caratteri.":"Enter a name between 2 and 120 characters.",
+ "Utente non disponibile.":"User unavailable.",
  "Saldatura":"Welding",
  "Tubazioni":"Pipework",
  "Sollevamento":"Lifting",
